@@ -5,7 +5,7 @@ importScripts("https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-com
 
 const CACHE = "gofc-v3";
 const SHELL = ["./", "./index.html", "./styles.css", "./app.js", "./firebase-config.js",
-  "./manifest.json", "./icons/logo.png", "./icons/icon-192.png"];
+  "./manifest.json", "./icons/logo.png?v=3", "./icons/icon-192.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
