@@ -136,7 +136,10 @@ let started = false;
 function route() {
   if (!S.players.size) return;
   if (S.me && !S.players.get(S.me)) S.me = null; // el admin ha borrado el jugador
-  if (S.me && S.players.get(S.me).uid !== S.uid) S.me = null; // el admin ha liberado el usuario
+  const mine = S.me && S.players.get(S.me);
+  if (mine && mine.uid === S.uid) S.justClaimed = null; // el servidor ya confirma la elección
+  // el admin ha liberado el usuario (se ignora el instante en que la elección aún no ha llegado del servidor)
+  if (mine && mine.uid !== S.uid && !(S.justClaimed === S.me && !mine.uid)) S.me = null;
   if (!S.me) { started = false; $tabs.classList.add("hidden"); renderPick(); return; }
   if (!started) { started = true; startMain(); }
   render();
@@ -177,6 +180,11 @@ async function claim(pid) {
       tx.set(doc(db, "users", S.uid), { playerId: pid, createdAt: serverTimestamp() });
     });
     S.me = pid;
+    S.justClaimed = pid;
+    const local = S.players.get(pid);
+    if (local) local.uid = S.uid; // actualizar ya la copia local, sin esperar al servidor
+    S.tab = "partidos";
+    window.scrollTo(0, 0);
     toast(`¡Bienvenido, ${p.name}! ⚽`);
     route();
   } catch (e) {
