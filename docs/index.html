@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Game Over FC</title>
+  <meta name="theme-color" content="#0a2e1c">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Game Over FC">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-96.png">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script src="firebase-config.js"></script>
+</head>
+<body>
+  <div class="court" aria-hidden="true"><span class="mid"></span><span class="circle"></span><span class="area a1"></span><span class="area a2"></span></div>
+
+  <header class="topbar">
+    <img src="icons/logo.png" alt="Escudo Game Over FC" class="crest">
+    <div>
+      <h1>GAME OVER FC</h1>
+      <small>Liga Comarcal Fútbol Sala · Alcoy</small>
+    </div>
+  </header>
+
+  <main id="app"><div class="loading"><div class="ball"></div>Cargando…</div></main>
+
+  <nav id="tabs" class="tabs hidden"></nav>
+  <dialog id="modal"></dialog>
+  <div id="toast" class="toast"></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

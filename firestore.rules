@@ -1,0 +1,72 @@
+rules_version = '2';
+// Reglas de seguridad de Game Over FC
+//  - Cada jugador solo puede ser elegido por UN móvil (no se puede "robar" un usuario).
+//  - Cada usuario solo puede cambiar SU voto y solo antes del cierre.
+//  - Solo los administradores (players/{id}.role == "admin") pueden modificar todo lo demás.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function userPath() { return /databases/$(database)/documents/users/$(request.auth.uid); }
+    function hasUser() { return signedIn() && exists(userPath()); }
+    function myPlayer() { return get(userPath()).data.playerId; }
+    function isAdmin() {
+      return hasUser() && get(/databases/$(database)/documents/players/$(myPlayer())).data.role == 'admin';
+    }
+    // Voto propio dentro del plazo
+    function onlyMyVote() {
+      let before = resource.data.get('votes', {});
+      let after = request.resource.data.get('votes', {});
+      return hasUser()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes'])
+        && after.diff(before).affectedKeys().hasOnly([myPlayer()])
+        && after[myPlayer()] in ['si', 'no']
+        && resource.data.get('pollDeadline', null) != null
+        && request.time < resource.data.pollDeadline;
+    }
+
+    match /players/{pid} {
+      allow read: if signedIn();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        signedIn()
+        && resource.data.get('uid', null) == null
+        && !exists(userPath())
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid', 'claimedAt'])
+        && request.resource.data.uid == request.auth.uid
+        && getAfter(userPath()).data.playerId == pid
+      );
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow create: if signedIn() && request.auth.uid == uid
+        && getAfter(/databases/$(database)/documents/players/$(request.resource.data.playerId)).data.uid == uid;
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    match /tokens/{uid} {
+      allow create, update: if hasUser() && request.auth.uid == uid && request.resource.data.playerId == myPlayer();
+      allow read: if false;
+      allow delete: if signedIn() && (request.auth.uid == uid || isAdmin());
+    }
+
+    match /matches/{id} {
+      allow read: if signedIn();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || onlyMyVote();
+    }
+
+    match /trainings/{id} {
+      allow read: if signedIn();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || onlyMyVote();
+    }
+
+    match /config/{id} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+  }
+}
