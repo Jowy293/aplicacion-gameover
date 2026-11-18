@@ -14,7 +14,8 @@ DEFAULT_CONFIG = {
     "pollWeekday": 3,            # 1=lunes ... 3=miércoles
     "pollHour": 20,              # la votación del partido cierra a las 20:00
     "trainingAuto": True,
-    "trainingTime": "21:00",
+    "trainingTime": "20:00",            # el entreno es el miércoles a las 20:00
+    "trainingOpenHour": 10,            # la encuesta se abre el martes a las 10:00
     "trainingDeadlineHour": 20,
     "trainingPlace": "",
     "leagueUrl": "https://ligacomarcal.com/competicion/lc-cuarta-division-26-27-mtizb4nd/clasificacion",

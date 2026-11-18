@@ -25,7 +25,7 @@ const db = getFirestore(fb);
 
 const S = {
   uid: null, me: null, players: new Map(), matches: [], trainings: [],
-  cfg: { pollWeekday: 3, pollHour: 20, trainingTime: "21:00", trainingPlace: "", trainingAuto: true },
+  cfg: { pollWeekday: 3, pollHour: 20, trainingTime: "20:00", trainingOpenHour: 10, trainingPlace: "", trainingAuto: true },
   clas: null, ratings: new Map(), tab: "partidos", adminTab: "partidos", unsub: [], swReg: null,
 };
 
@@ -305,6 +305,68 @@ const crestImg = (src, cls = "") => src
 const crests = (m) => m.isHome !== false ? [GO_CREST, m.crest] : [m.crest, GO_CREST];
 const score = (m) => resultOf(m) ? (m.isHome !== false ? `${m.golesGO} - ${m.golesRival}` : `${m.golesRival} - ${m.golesGO}`) : "vs";
 
+// ----- goleadores -----
+const goalsOf = (m) => Object.entries(m.goals || {}).filter(([, n]) => n > 0);
+function scorersLine(m) {
+  const g = goalsOf(m).sort((a, b) => b[1] - a[1]);
+  if (!g.length) return "";
+  return `<div class="scorers">⚽ ${g.map(([pid, n]) => `${esc(pname(pid))}${n > 1 ? ` <b>×${n}</b>` : ""}`).join(" · ")}</div>`;
+}
+// Clasificación de goleadores de la temporada
+function scorersTable() {
+  const out = {};
+  for (const m of S.matches) for (const [pid, n] of goalsOf(m)) {
+    (out[pid] ||= { goals: 0, matches: 0 }); out[pid].goals += n; out[pid].matches++;
+  }
+  return Object.entries(out).filter(([pid]) => S.players.has(pid))
+    .sort((a, b) => b[1].goals - a[1].goals || a[1].matches - b[1].matches);
+}
+function viewScorers() {
+  const t = scorersTable();
+  const total = S.matches.reduce((a, m) => a + (+m.golesGO || 0), 0);
+  const assigned = t.reduce((a, [, v]) => a + v.goals, 0);
+  if (!t.length) return `<div class="card empty">⚽ Todavía no hay goles apuntados.${isAdmin() ? "<br>Apúntalos desde cada partido con el botón “⚽ Goleadores”." : ""}</div>`;
+  const podium = t.slice(0, 3);
+  return `<div class="card podium">${[1, 0, 2].filter((i) => podium[i]).map((i) => {
+      const [pid, v] = podium[i]; const p = S.players.get(pid);
+      return `<div class="pod p${i + 1}">${jersey(p)}<div class="medal">${["🥇", "🥈", "🥉"][i]}</div><div class="pg">${v.goals}</div><div class="small muted">${v.goals === 1 ? "gol" : "goles"}</div></div>`;
+    }).join("")}</div>
+    <div class="card" style="padding:4px 12px">
+      ${t.map(([pid, v], i) => `<div class="rate-row flat ${pid === S.me ? "meRow" : ""}"><span class="rk">${["🥇", "🥈", "🥉"][i] || i + 1}</span>
+        <span class="nm">${esc(pname(pid))} <span class="muted small">#${esc(S.players.get(pid)?.number ?? "")}</span></span>
+        <span class="muted small">${v.matches} ${v.matches === 1 ? "partido" : "partidos"}</span><span class="avg hi">${v.goals}</span></div>`).join("")}
+    </div>
+    <p class="muted small" style="text-align:center">${assigned} de ${total} goles del equipo apuntados</p>`;
+}
+function goalsForm(mid) {
+  const m = S.matches.find((x) => x.id === mid);
+  const list = sortedPlayers().filter((p) => p.position !== "Entrenador")
+    .sort((a, b) => (m.votes?.[b.id] === "si") - (m.votes?.[a.id] === "si"));
+  openModal(`<form data-form="goals" data-id="${mid}">
+    <h3>⚽ Goleadores · ${m.isHome !== false ? "vs" : "@"} ${esc(m.rival)}</h3>
+    <p class="muted small">Marcador: GAME OVER ${m.golesGO ?? "?"} - ${m.golesRival ?? "?"} ${esc(m.rival)}. Pon cuántos goles marcó cada uno.</p>
+    ${list.map((p) => `<div class="goal-edit"><span><b>${esc(p.name)}</b> <span class="muted small">#${esc(p.number)}</span>${m.votes?.[p.id] === "si" ? ` <span class="tag ok">fue</span>` : ""}</span>
+      <span class="stepper"><button type="button" class="btn sm" data-act="g-minus">−</button><input type="number" name="g_${p.id}" min="0" max="30" value="${m.goals?.[p.id] || 0}"><button type="button" class="btn sm" data-act="g-plus">+</button></span></div>`).join("")}
+    <p class="muted small" id="gsum"></p>
+    <div class="acts"><button type="button" class="btn" data-act="close">Cancelar</button><button class="btn primary" type="submit">Guardar</button></div>
+  </form>`);
+  updateGoalSum();
+}
+function updateGoalSum() {
+  const f = $modal.querySelector('[data-form="goals"]'); if (!f) return;
+  const m = S.matches.find((x) => x.id === f.dataset.id);
+  const sum = [...f.querySelectorAll("input[type=number]")].reduce((a, i) => a + (+i.value || 0), 0);
+  const el = f.querySelector("#gsum");
+  const exp = m.golesGO == null ? null : +m.golesGO;
+  el.textContent = `Total apuntado: ${sum}${exp != null ? ` de ${exp}` : ""}${exp != null && sum > exp ? " ⚠️ hay más goles que en el marcador" : ""}`;
+}
+async function saveGoals(form) {
+  const goals = {};
+  for (const [k, v] of new FormData(form).entries()) if (k.startsWith("g_") && +v > 0) goals[k.slice(2)] = Math.min(30, Math.floor(+v));
+  await updateDoc(doc(db, "matches", form.dataset.id), { goals });
+  toast("Goleadores guardados ⚽");
+}
+
 function nextMatch() {
   const now = Date.now();
   return S.matches.find((m) => !resultOf(m) && (!toDate(m.date) || toDate(m.date).getTime() > now - 3 * 36e5));
@@ -325,6 +387,7 @@ function matchCard(m, hero) {
       <div class="score ${r ? "res " + r : ""}">${score(m)}</div>
       <div class="team ${m.isHome === false ? "go" : ""}">${crestImg(ca, "lg")}${esc(a)}</div>
     </div>
+    ${scorersLine(m)}
     <div class="when">
       ${d ? `<div class="big">${cap(fmtDay(d))}</div>${m.timeKnown ? `<div>🕘 ${fmtTime(d)} h</div>` : `<div class="muted">Hora pendiente de publicar</div>`}` : `<div class="muted">Fecha por confirmar</div>`}
       ${m.venue ? `<div class="muted small">📍 ${esc(m.venue)}</div>` : ""}
@@ -374,7 +437,7 @@ function viewTrainings() {
   };
   return `${notifBanner()}
     <div class="section-title"><h2>Entrenos</h2></div>
-    ${current.length ? current.map(card).join("") : `<div class="card empty">Cada martes se abre la encuesta del entreno del miércoles. 💪</div>`}
+    ${current.length ? current.map(card).join("") : `<div class="card empty">La encuesta del entreno se abre el martes a las ${S.cfg.trainingOpenHour ?? 10}:00 y se cierra el miércoles a las ${S.cfg.trainingDeadlineHour ?? 20}:00. 💪</div>`}
     ${past.length ? `<div class="section-title"><h3>Anteriores</h3></div><div class="card" style="padding:4px 12px">${past.map((t) => {
       const y = Object.values(t.votes || {}).filter((v) => v === "si").length;
       return `<div class="admin-item"><span>${cap(fmtDay(toDate(t.date)))}</span><span class="tag ok">${y} fueron</span></div>`;
@@ -399,6 +462,11 @@ function parseStandings(text) {
   return out;
 }
 function viewClas() {
+  const toggle = `<div class="subtabs" style="margin-top:4px"><button class="btn sm ${S.clasTab !== "goles" ? "on" : ""}" data-act="ctab" data-tab="liga">🏆 Liga</button><button class="btn sm ${S.clasTab === "goles" ? "on" : ""}" data-act="ctab" data-tab="goles">⚽ Goleadores</button></div>`;
+  if (S.clasTab === "goles") return `<div class="section-title"><h2>Goleadores</h2><span class="muted small">Game Over FC 26/27</span></div>${toggle}${viewScorers()}`;
+  return toggle.replace('style="margin-top:4px"', 'style="margin-top:16px"') + viewClasLiga();
+}
+function viewClasLiga() {
   const c = S.clas;
   const link = `<a class="btn block" style="display:block;text-align:center;text-decoration:none;margin-top:4px" href="${esc(leagueUrl())}" target="_blank" rel="noopener">🌐 Ver en ligacomarcal.com</a>`;
   if (!c || !(c.teams?.length || c.rows?.length)) return `<div class="section-title"><h2>Clasificación</h2></div><div class="card empty">Todavía no hay clasificación cargada.</div>${link}`;
@@ -527,7 +595,7 @@ function openMatchModal(id) {
   S.openMatch = id;
   openModal(`${matchCard(m, false).replace('class="card ', 'class="card-plain ')}
     ${ratingsBlock(m)}
-    <div class="acts"><button class="btn" data-act="close">Cerrar</button>${isAdmin() ? `<button class="btn primary" data-act="match-edit" data-id="${id}">Editar</button>` : ""}</div>`);
+    <div class="acts"><button class="btn" data-act="close">Cerrar</button>${isAdmin() ? `${matchStarted(m) ? `<button class="btn wine" data-act="goals" data-id="${id}">⚽ Goleadores</button>` : ""}<button class="btn primary" data-act="match-edit" data-id="${id}">Editar</button>` : ""}</div>`);
 }
 function refreshMatchModal() {
   if ($modal.open && S.openMatch && $modal.querySelector(".ratings")) {
@@ -566,6 +634,7 @@ function viewProfile() {
         <div class="stat"><div class="v">${at.yes}/${at.total}</div><div class="l">Entrenos</div></div>
         <div class="stat"><div class="v">${Math.round((am.pct + at.pct) / ((am.total ? 1 : 0) + (at.total ? 1 : 0) || 1))}%</div><div class="l">Asistencia</div></div>
       </div>
+      ${p.position !== "Entrenador" ? (() => { const g = scorersTable().find(([pid]) => pid === S.me); return `<div class="stat" style="margin-top:10px"><div class="v">⚽ ${g ? g[1].goals : 0}</div><div class="l">Goles esta temporada${g ? ` · en ${g[1].matches} ${g[1].matches === 1 ? "partido" : "partidos"}` : ""}</div></div>`; })() : ""}
       ${p.position !== "Entrenador" ? `<div class="stat" style="margin-top:10px"><div class="v">⭐ ${fmtAvg(my?.avg)}</div><div class="l">Media de valoraciones${my ? ` · ${my.n} notas en ${my.matches.size} ${my.matches.size === 1 ? "partido" : "partidos"}` : ""}</div></div>` : ""}
     </div>
     ${myComments.length ? `<div class="card"><h3>💬 Lo que dicen de ti</h3>${myComments.map((c) => `<div class="cmt"><b>${esc(pname(c.by))}</b>${c.score ? ` <span class="muted">(${c.score})</span>` : ""} · <span class="muted small">${c.m.isHome !== false ? "vs" : "@"} ${esc(c.m.rival)}</span><br>${esc(c.text)}</div>`).join("")}</div>` : ""}
@@ -636,7 +705,7 @@ function adminMatches() {
 
 function adminTrainings() {
   return `<button class="btn primary block" data-act="train-edit">➕ Crear encuesta de entreno</button>
-    <p class="muted small">Cada martes se crea automáticamente la encuesta del entreno del miércoles (puedes desactivarlo en Ajustes).</p>
+    <p class="muted small">Cada martes a las 10:00 se abre automáticamente la encuesta del entreno del miércoles, que cierra el miércoles a las 20:00 (puedes desactivarlo en Ajustes).</p>
     <div class="card" style="padding:4px 12px">${S.trainings.map((t) => `<div class="admin-item"><div><b>${cap(fmtDay(toDate(t.date)))}</b><br>
       <span class="muted small">${esc(t.time || "")} ${t.place ? "· " + esc(t.place) : ""} · ${Object.values(t.votes || {}).filter((v) => v === "si").length} van</span></div>
       <div class="acts"><button class="btn sm" data-act="train-edit" data-id="${t.id}">Editar</button></div></div>`).join("") || `<div class="empty">Sin entrenos</div>`}</div>`;
@@ -678,7 +747,7 @@ function adminSettings() {
       <div><label>A las (hora)</label><input type="number" name="pollHour" min="0" max="23" value="${esc(c.pollHour)}"></div>
     </div>
     <h3 style="margin-top:16px">Entrenos</h3>
-    <label class="check"><input type="checkbox" name="trainingAuto" ${c.trainingAuto !== false ? "checked" : ""}> Crear encuesta automática cada martes</label>
+    <label class="check"><input type="checkbox" name="trainingAuto" ${c.trainingAuto !== false ? "checked" : ""}> Abrir encuesta automática cada martes a las 10:00</label>
     <div class="row2">
       <div><label>Hora del entreno</label><input type="time" name="trainingTime" value="${esc(c.trainingTime || "")}"></div>
       <div><label>Cierre votación entreno (hora)</label><input type="number" name="trainingDeadlineHour" min="0" max="23" value="${esc(c.trainingDeadlineHour ?? 20)}"></div>
@@ -846,6 +915,7 @@ document.addEventListener("click", async (e) => {
       case "pick": return claim(id);
       case "tab": S.tab = b.dataset.tab; window.scrollTo(0, 0); return render();
       case "atab": S.adminTab = b.dataset.tab; return render();
+      case "ctab": S.clasTab = b.dataset.tab; return render();
       case "vote": return vote(b.dataset.kind, id, b.dataset.v);
       case "notif": return enableNotifications();
       case "match": {
@@ -853,6 +923,12 @@ document.addEventListener("click", async (e) => {
       }
       case "close": S.openMatch = null; return $modal.close();
       case "rate": return rateForm(id);
+      case "goals": return goalsForm(id);
+      case "g-plus": case "g-minus": {
+        const inp = b.parentElement.querySelector("input");
+        inp.value = Math.max(0, Math.min(30, (+inp.value || 0) + (act === "g-plus" ? 1 : -1)));
+        return updateGoalSum();
+      }
       case "rate-all": return rateForm(id, true);
       case "match-edit": return matchForm(S.matches.find((x) => x.id === id));
       case "date-edit": return dateForm(S.matches.find((x) => x.id === id));
@@ -891,6 +967,7 @@ document.addEventListener("submit", async (e) => {
     const kind = form.dataset.form;
     if (kind === "match") await saveMatch(form);
     if (kind === "date") await saveDate(form);
+    if (kind === "goals") { await saveGoals(form); openMatchModal(form.dataset.id); return; }
     if (kind === "rate") { await saveRatings(form); S.openMatch = form.dataset.id; openMatchModal(form.dataset.id); return; }
     if (kind === "standings") {
       const teams = parseStandings(new FormData(form).get("text"));
@@ -913,3 +990,5 @@ document.addEventListener("submit", async (e) => {
     if ($modal.open) $modal.close();
   } catch (err) { toast("Error: " + err.message); }
 });
+
+document.addEventListener("input", (e) => { if (e.target.name?.startsWith("g_")) updateGoalSum(); });

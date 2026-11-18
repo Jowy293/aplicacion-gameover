@@ -216,3 +216,16 @@ textarea { resize: vertical; }
 .re-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .re-head select { width: 76px; margin-left: auto; padding: 8px; text-align: center; font-weight: 800; }
 .res small.star { display: block; font-family: Inter, sans-serif; font-size: 10px; color: var(--gold); line-height: 1; }
+
+/* Goleadores */
+.scorers { text-align: center; font-size: 13px; color: var(--text); margin: -4px 0 10px; line-height: 1.5; }
+.scorers b { color: var(--gold); }
+.podium { display: grid; grid-template-columns: repeat(3, 1fr); align-items: end; gap: 8px; text-align: center; }
+.pod .jersey { max-width: 92px; margin: 0 auto; }
+.pod.p1 .jersey { max-width: 118px; }
+.pod .medal { font-size: 22px; margin-top: 2px; }
+.pod .pg { font-family: "Bebas Neue", sans-serif; font-size: 34px; color: var(--gold); line-height: 1; }
+.goal-edit { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--card-b); }
+.stepper { display: flex; align-items: center; gap: 6px; flex: none; }
+.stepper input { width: 52px; text-align: center; padding: 7px 4px; font-weight: 800; }
+.stepper .btn { width: 34px; padding: 6px 0; font-size: 18px; line-height: 1; }
