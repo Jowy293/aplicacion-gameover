@@ -12,71 +12,40 @@ App del equipo para **Android e iPhone**: elegir tu jugador (bloqueado para el r
 
 ---
 
-## PARTE A · Montarlo (solo una vez, lo hace el admin) ⏱️ ~30 min
+## PARTE A · Montarlo (solo una vez, lo hace el admin)
 
-### 1. Crear el proyecto de Firebase
-1. Entra en <https://console.firebase.google.com> con una cuenta de Google → **Crear un proyecto** → nombre `game-over-fc` (Google Analytics: desactivado).
-2. **Añadir app web**: en la pantalla del proyecto pulsa el icono **`</>`** → apodo `Game Over FC` → **Registrar app**. Te mostrará un bloque `firebaseConfig = { apiKey: ..., ... }`. **Déjalo abierto**, lo necesitas en el paso 2.
-3. **Authentication** (menú izquierdo › Compilación) → **Comenzar** → pestaña *Método de inicio de sesión* → **Anónimo** → Habilitar → Guardar.
+### ✅ Ya hecho
+- Código subido a <https://github.com/Jowy293/aplicacion-gameover>.
+- GitHub Pages activado: la app está en **<https://jowy293.github.io/aplicacion-gameover/>**.
+- Variable `APP_URL` creada en el repositorio.
+
+### 1. Crear el proyecto de Firebase ⏱️ ~15 min
+1. Entra en <https://console.firebase.google.com> con tu cuenta de Google → **Crear un proyecto** → nombre `game-over-fc` (Google Analytics: desactivado).
+2. **Añadir app web**: pulsa el icono **`</>`** → apodo `Game Over FC` → **Registrar app**. Copia el bloque `firebaseConfig = { apiKey: ..., ... }`.
+3. **Authentication** (menú izquierdo › Compilación) → **Comenzar** → *Método de inicio de sesión* → **Anónimo** → Habilitar → Guardar.
+   Después, en **Authentication → Configuración → Dominios autorizados** → **Agregar dominio** → `jowy293.github.io`.
 4. **Firestore Database** → **Crear base de datos** → ubicación `eur3 (europe-west)` → *modo de producción* → Crear.
-   - Pestaña **Reglas** → borra todo lo que hay, pega el contenido del archivo [`firestore.rules`](firestore.rules) → **Publicar**.
-5. **Clave de notificaciones**: ⚙️ *Configuración del proyecto* → pestaña **Cloud Messaging** → abajo, *Configuración web* → *Certificados push web* → **Generar par de claves**. Copia la clave (empieza por `B...`).
-6. **Clave del servidor** (para las tareas automáticas): ⚙️ *Configuración del proyecto* → pestaña **Cuentas de servicio** → **Generar nueva clave privada** → se descarga un archivo `.json`. **Guárdalo bien y no lo compartas con nadie**.
+   Pestaña **Reglas** → borra todo, pega el contenido de [`firestore.rules`](firestore.rules) → **Publicar**.
+5. ⚙️ *Configuración del proyecto* → **Cloud Messaging** → *Certificados push web* → **Generar par de claves**. Copia la clave (empieza por `B...`).
+6. ⚙️ *Configuración del proyecto* → **Cuentas de servicio** → **Generar nueva clave privada** → se descarga un `.json`. **No lo compartas ni lo subas al repositorio.**
 
-### 2. Rellenar la configuración de la app
-Abre [`public/firebase-config.js`](public/firebase-config.js) y sustituye los valores por los del paso 1.2, y `VAPID_KEY` por la clave del paso 1.5:
+### 2. Poner la configuración en la app
+Edita [`docs/firebase-config.js`](docs/firebase-config.js) con los datos de 1.2 y la clave de 1.5 (en GitHub: abre el archivo → ✏️ → pega → *Commit changes*). En un par de minutos la app ya conecta.
 
-```js
-self.FIREBASE_CONFIG = {
-  apiKey: "AIza...",
-  authDomain: "game-over-fc.firebaseapp.com",
-  projectId: "game-over-fc",
-  storageBucket: "game-over-fc.appspot.com",
-  messagingSenderId: "1234567890",
-  appId: "1:1234567890:web:abcd...",
-};
-self.VAPID_KEY = "BExxxxxxxx...";
-```
-(Estos datos no son secretos, pueden ir en la web. El `.json` del paso 1.6 sí lo es: **ese nunca se sube**.)
+### 3. Activar las tareas automáticas (sincronizar liga, encuesta de los martes, notificaciones)
+1. Repositorio → **Settings → Secrets and variables → Actions → New repository secret** → nombre `FIREBASE_SERVICE_ACCOUNT` → pega **todo** el contenido del `.json` de 1.6.
+2. Crea el archivo de tareas (el token actual no tiene permiso para subirlo, por eso hay que hacerlo desde la web):
+   en el repositorio → **Add file → Create new file** → nombre `.github/workflows/tareas.yml` → pega el contenido de [`automatizacion/tareas.yml`](automatizacion/tareas.yml) → **Commit changes**.
+3. **Actions → Tareas automáticas → Run workflow** → tarea **`inicializar`**. Carga la plantilla, deja a **JOWY #22 (Joan Brotons Vidal) como admin** y lee la web de la liga.
 
-### 3. Subir el proyecto a GitHub
-1. Crea una cuenta en <https://github.com> si no tienes.
-2. **New repository** → nombre `game-over-fc` → **Public** (GitHub Pages gratis lo necesita; los datos de los jugadores están en Firebase, no en el repositorio) → Create.
-3. Desde una terminal en la carpeta del proyecto:
-   ```bash
-   cd ~/game-over-fc
-   git init -b main
-   git add .
-   git commit -m "App Game Over FC"
-   git remote add origin https://github.com/TU_USUARIO/game-over-fc.git
-   git push -u origin main
-   ```
-
-### 4. Configurar GitHub
-En tu repositorio, **Settings**:
-1. **Pages** → *Build and deployment* → Source: **GitHub Actions**.
-2. **Secrets and variables › Actions**:
-   - Pestaña *Secrets* → **New repository secret** → nombre `FIREBASE_SERVICE_ACCOUNT` → pega **todo el contenido** del `.json` del paso 1.6.
-   - Pestaña *Variables* → **New repository variable** → nombre `APP_URL` → valor `https://TU_USUARIO.github.io/game-over-fc/`
-3. Pestaña **Actions** del repositorio → si lo pide, pulsa *I understand… enable workflows*.
-4. Vuelve a lanzar la publicación: **Actions → Publicar app → Run workflow**. Cuando salga ✅, la app estará en `https://TU_USUARIO.github.io/game-over-fc/`.
-5. En Firebase → **Authentication → Configuración → Dominios autorizados** → **Agregar dominio** → `TU_USUARIO.github.io`.
-
-### 5. Cargar la plantilla y los partidos
-**Actions → Tareas automáticas → Run workflow** → tarea: **`inicializar`** → Run.
-Esto crea los 17 jugadores + el entrenador (Toni, DT), deja a **JOWY #22 (Joan Brotons Vidal) como administrador** y hace la primera lectura de la web de la liga.
-
-### 6. Entrar como admin
-Abre la app en tu móvil, elige la camiseta **JOWY 22** y te aparecerá la pestaña **🛠️ Admin**. Envía el enlace al grupo del equipo.
-
-### 7. Probar las notificaciones
-Activa los avisos en tu móvil (pestaña Perfil) y lanza **Actions → Tareas automáticas → Run workflow → `prueba-notificacion`**.
+### 4. Entrar como admin y probar
+Abre la app, elige **JOWY 22** (aparece la pestaña 🛠️ Admin), activa las notificaciones en Perfil y lanza **Run workflow → `prueba-notificacion`**.
 
 ---
 
 ## PARTE B · Instalar la app en el móvil (para todos los jugadores)
 
-Enlace: `https://TU_USUARIO.github.io/game-over-fc/`
+Enlace: **https://jowy293.github.io/aplicacion-gameover/**
 
 ### 🤖 Android
 1. Abre el enlace con **Chrome**.
@@ -126,19 +95,19 @@ Todos ven quién va, quién no y quién no ha votado aún.
 
 **No llegan notificaciones.**
 - iPhone: la app tiene que estar añadida a la pantalla de inicio y abierta desde allí, con iOS 16.4 o superior.
-- Comprueba que el secreto `FIREBASE_SERVICE_ACCOUNT` y la variable `APP_URL` están bien puestos.
+- Comprueba que el secreto `FIREBASE_SERVICE_ACCOUNT` está bien puesto.
 - En Perfil pulsa *Volver a registrar este móvil* y lanza `prueba-notificacion`.
 
 **Las tareas automáticas dejan de ejecutarse.** GitHub pausa las tareas programadas si el repositorio pasa **60 días sin cambios**. Entra en *Actions → Tareas automáticas* y pulsa **Enable workflow**, o haz cualquier pequeño cambio en el repositorio de vez en cuando.
 
-**Cambiar el escudo por uno de más calidad.** El escudo actual está recortado de la imagen de la plantilla y se ve algo pixelado. Si tienes el original, sustituye `public/icons/logo.png` (y `icon-96/180/192/512.png`, cuadrados con fondo verde) y sube los cambios.
+**Cambiar el escudo por uno de más calidad.** El escudo actual está recortado de la imagen de la plantilla y se ve algo pixelado. Si tienes el original, sustituye `docs/icons/logo.png` (y `icon-96/180/192/512.png`, cuadrados con fondo verde) y sube los cambios.
 
 ---
 
 ## Estructura del proyecto
 ```
 game-over-fc/
-├── public/                 ← la app (lo que se instala en el móvil)
+├── docs/                   ← la app (lo que se instala en el móvil)
 │   ├── index.html, app.js, styles.css
 │   ├── firebase-config.js  ← tu configuración de Firebase (paso 2)
 │   ├── sw.js               ← funcionamiento sin conexión + notificaciones
@@ -150,5 +119,5 @@ game-over-fc/
 │   ├── training.py         ← encuesta del entreno de los martes
 │   └── test_push.py        ← notificación de prueba
 ├── firestore.rules         ← seguridad: usuarios bloqueados, solo tu voto, solo admins editan
-└── .github/workflows/      ← publicación y horarios automáticos
+└── automatizacion/tareas.yml ← horarios automáticos (copiar a .github/workflows/)
 ```
