@@ -83,7 +83,7 @@ Todos ven quién va, quién no y quién no ha votado aún.
 
 **Las tareas automáticas dejan de ejecutarse.** GitHub pausa las tareas programadas si el repositorio pasa **60 días sin cambios**. Entra en *Actions → Tareas automáticas* y pulsa **Enable workflow**, o haz cualquier pequeño cambio en el repositorio de vez en cuando.
 
-**Cambiar el escudo por uno de más calidad.** El escudo actual está recortado de la imagen de la plantilla y se ve algo pixelado. Si tienes el original, sustituye `docs/icons/logo.png` (y `icon-96/180/192/512.png`, cuadrados con fondo verde) y sube los cambios.
+**Cambiar el escudo por uno de más calidad.** El escudo está recortado de una foto de la camiseta. Si tienes el archivo original del diseño, sustituye `docs/icons/logo.png` (y `icon-96/180/192/512.png`, cuadrados con fondo verde) y sube los cambios.
 
 ---
 
