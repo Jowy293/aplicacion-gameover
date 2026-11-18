@@ -368,16 +368,44 @@ function viewTrainings() {
 }
 
 // ----- clasificación -----
+const LEAGUE_URL = "https://ligacomarcal.com/competicion/lc-cuarta-division-26-27-mtizb4nd/clasificacion";
+const leagueUrl = () => S.cfg.leagueUrl || LEAGUE_URL;
+const teamCrest = (name) => {
+  const k = slug(String(name).replace(/\./g, ""));
+  return k === "game-over-fc" ? GO_CREST : CRESTS[k] ? `crests/${k}.png` : null;
+};
+// Lee el texto copiado de la clasificación de ligacomarcal.com
+function parseStandings(text) {
+  const re = /(?:^|\s)(\d{1,2})\s+(.+?)\s+(\d{1,3})\s+PTS\s+PJ\s*(\d+)\s+G\s*(\d+)\s+E\s*(\d+)\s+P\s*(\d+)\s+DG\s*([+\-−]?\d+)((?:\s+[GEP](?=\s|$))*)/g;
+  const out = [];
+  for (const m of text.matchAll(re)) {
+    out.push({ pos: +m[1], name: m[2].replace(/\s+/g, " ").trim(), pts: +m[3], pj: +m[4], g: +m[5], e: +m[6], p: +m[7],
+      dg: +m[8].replace("−", "-"), form: m[9].replace(/\s+/g, "") });
+  }
+  return out;
+}
 function viewClas() {
   const c = S.clas;
-  if (!c || !c.rows?.length) return `<div class="section-title"><h2>Clasificación</h2></div><div class="card empty">La clasificación se cargará en la próxima sincronización con la web de la liga.</div>`;
-  const headers = c.headers || [];
-  return `<div class="section-title"><h2>Clasificación</h2><span class="muted small">Cuarta División</span></div>
-    <div class="card tbl-wrap"><table class="clas">
-      ${headers.length ? `<tr>${headers.map((h) => `<th>${esc(h)}</th>`).join("")}</tr>` : ""}
+  const link = `<a class="btn block" style="display:block;text-align:center;text-decoration:none;margin-top:4px" href="${esc(leagueUrl())}" target="_blank" rel="noopener">🌐 Ver en ligacomarcal.com</a>`;
+  if (!c || !(c.teams?.length || c.rows?.length)) return `<div class="section-title"><h2>Clasificación</h2></div><div class="card empty">Todavía no hay clasificación cargada.</div>${link}`;
+  if (!c.teams) { // formato antiguo
+    return `<div class="section-title"><h2>Clasificación</h2></div><div class="card tbl-wrap"><table class="clas">
+      ${(c.headers || []).length ? `<tr>${c.headers.map((h) => `<th>${esc(h)}</th>`).join("")}</tr>` : ""}
       ${c.rows.map((r) => `<tr class="${r.join(" ").toUpperCase().includes("GAME OVER") ? "me" : ""}">${r.map((x) => `<td>${esc(x)}</td>`).join("")}</tr>`).join("")}
+    </table></div>${link}`;
+  }
+  const upd = toDate(c.updatedAt);
+  return `<div class="section-title"><h2>Clasificación</h2><span class="muted small">Cuarta División 26/27</span></div>
+    <div class="card" style="padding:6px 8px"><table class="clas">
+      <tr><th>#</th><th>Equipo</th><th class="n">PJ</th><th class="n">DG</th><th class="n">PTS</th></tr>
+      ${c.teams.map((t) => `<tr class="${/game\s*over/i.test(t.name) ? "me" : ""}">
+        <td class="pos">${t.pos}</td>
+        <td><div class="rowteam">${crestImg(teamCrest(t.name))}<div><div class="tname">${esc(t.name)}</div>
+          <div class="form">${[...(t.form || "")].map((x) => `<i class="f${x}">${x}</i>`).join("")}<span class="muted"> ${t.g}G ${t.e}E ${t.p}P</span></div></div></div></td>
+        <td class="n">${t.pj}</td><td class="n">${t.dg > 0 ? "+" : ""}${t.dg}</td><td class="n pts">${t.pts}</td></tr>`).join("")}
     </table></div>
-    <p class="muted small" style="text-align:center"><a href="${esc(S.cfg.leagueUrl || "#")}" target="_blank" rel="noopener">Ver en ligacomarcal.com</a></p>`;
+    ${upd ? `<p class="muted small" style="text-align:center">Actualizada ${fmt(upd, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</p>` : ""}
+    ${link}`;
 }
 
 // ----- perfil -----
@@ -443,8 +471,8 @@ async function setupForegroundPush() {
 //  PANEL DE ADMINISTRACIÓN (solo role == "admin")
 // =====================================================================
 function viewAdmin() {
-  const sub = [["partidos", "Partidos"], ["entrenos", "Entrenos"], ["jugadores", "Jugadores y permisos"], ["ajustes", "Ajustes"]];
-  const body = { partidos: adminMatches, entrenos: adminTrainings, jugadores: adminPlayers, ajustes: adminSettings }[S.adminTab]();
+  const sub = [["partidos", "Partidos"], ["entrenos", "Entrenos"], ["clasif", "Clasificación"], ["jugadores", "Jugadores y permisos"], ["ajustes", "Ajustes"]];
+  const body = { partidos: adminMatches, entrenos: adminTrainings, clasif: adminStandings, jugadores: adminPlayers, ajustes: adminSettings }[S.adminTab]();
   return `<div class="section-title"><h2>Administración</h2></div>
     <div class="subtabs">${sub.map(([k, l]) => `<button class="btn sm ${S.adminTab === k ? "on" : ""}" data-act="atab" data-tab="${k}">${l}</button>`).join("")}</div>
     ${body}`;
@@ -467,6 +495,19 @@ function adminTrainings() {
     <div class="card" style="padding:4px 12px">${S.trainings.map((t) => `<div class="admin-item"><div><b>${cap(fmtDay(toDate(t.date)))}</b><br>
       <span class="muted small">${esc(t.time || "")} ${t.place ? "· " + esc(t.place) : ""} · ${Object.values(t.votes || {}).filter((v) => v === "si").length} van</span></div>
       <div class="acts"><button class="btn sm" data-act="train-edit" data-id="${t.id}">Editar</button></div></div>`).join("") || `<div class="empty">Sin entrenos</div>`}</div>`;
+}
+
+function adminStandings() {
+  return `<form class="card" data-form="standings">
+    <h3>Actualizar clasificación</h3>
+    <ol class="small muted" style="padding-left:18px;line-height:1.6">
+      <li>Abre la clasificación en la web: <a href="${esc(leagueUrl())}" target="_blank" rel="noopener">ligacomarcal.com</a></li>
+      <li>Mantén pulsado sobre la página → <b>Seleccionar todo</b> → <b>Copiar</b>.</li>
+      <li>Vuelve aquí, pégalo abajo y pulsa <b>Actualizar</b>.</li>
+    </ol>
+    <textarea name="text" rows="7" placeholder="Pega aquí el texto de la clasificación…" required></textarea>
+    <div class="acts"><button class="btn primary" type="submit">Actualizar</button></div>
+  </form>`;
 }
 
 function adminPlayers() {
@@ -705,6 +746,14 @@ document.addEventListener("submit", async (e) => {
     const kind = form.dataset.form;
     if (kind === "match") await saveMatch(form);
     if (kind === "date") await saveDate(form);
+    if (kind === "standings") {
+      const teams = parseStandings(new FormData(form).get("text"));
+      if (!teams.length) return toast("No encuentro la clasificación en ese texto. Copia toda la página de la clasificación.");
+      await setDoc(doc(db, "config", "clasificacion"), { teams, updatedAt: serverTimestamp(), source: "admin" });
+      form.reset();
+      toast(`Clasificación actualizada (${teams.length} equipos) ✅`);
+      return;
+    }
     if (kind === "training") await saveTraining(form);
     if (kind === "player") await savePlayer(form);
     if (kind === "settings") {

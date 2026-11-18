@@ -3,7 +3,7 @@ importScripts("./firebase-config.js");
 importScripts("https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js");
 importScripts("https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js");
 
-const CACHE = "gofc-v5";
+const CACHE = "gofc-v6";
 const SHELL = ["./", "./index.html", "./styles.css", "./app.js", "./firebase-config.js",
   "./manifest.json", "./icons/logo.png?v=3", "./icons/icon-192.png"];
 

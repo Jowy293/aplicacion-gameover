@@ -1,0 +1,177 @@
+CLASIFICACIÓN
+CALENDARIO
+RANKINGS
+REGLAMENTO
+1
+Buena Onda FS "B"
+12
+PTS
+PJ 4
+G 4
+E 0
+P 0
+DG +19
+G
+G
+G
+G
+2
+La Cuina de Jairo
+12
+PTS
+PJ 5
+G 4
+E 0
+P 1
+DG +13
+G
+G
+G
+P
+G
+3
+Bar Ferrocarril FS
+9
+PTS
+PJ 4
+G 3
+E 0
+P 1
+DG +2
+P
+G
+G
+G
+4
+Birrarreal FS
+7
+PTS
+PJ 4
+G 2
+E 1
+P 1
+DG +3
+E
+P
+G
+G
+5
+Sercomac FC
+7
+PTS
+PJ 4
+G 2
+E 1
+P 1
+DG -2
+E
+G
+P
+G
+6
+Tex-Textiles FS
+7
+PTS
+PJ 4
+G 2
+E 1
+P 1
+DG +1
+E
+G
+G
+P
+7
+C.D. Santa Rosa Copisan
+6
+PTS
+PJ 4
+G 2
+E 0
+P 2
+DG -7
+P
+G
+P
+G
+8
+FC Racing Alcoy
+4
+PTS
+PJ 4
+G 1
+E 1
+P 2
+DG -3
+E
+P
+G
+P
+9
+DKV-Brownsea FS
+4
+PTS
+PJ 4
+G 1
+E 1
+P 2
+DG +4
+G
+P
+P
+E
+10
+Colpet FS
+4
+PTS
+PJ 5
+G 1
+E 1
+P 3
+DG -2
+G
+P
+P
+E
+P
+11
+Atlético Salesiano
+3
+PTS
+PJ 5
+G 1
+E 0
+P 4
+DG -12
+P
+G
+P
+P
+P
+12
+Game Over FC
+3
+PTS
+PJ 4
+G 1
+E 0
+P 3
+DG -4
+P
+P
+G
+P
+13
+PD Juan XXIII B
+3
+PTS
+PJ 5
+G 1
+E 0
+P 4
+DG -12
+P
+P
+P
+P
+G

@@ -186,3 +186,15 @@ dialog .acts .btn { flex: 1; }
 .crest-img.lg { width: 64px; height: 64px; display: block; margin: 0 auto 6px; font-size: 34px; filter: drop-shadow(0 3px 6px rgba(0,0,0,.45)); }
 .crest-img.ph { opacity: .5; }
 .rowteam { display: flex; align-items: center; gap: 8px; }
+
+/* Clasificación */
+table.clas th.n, table.clas td.n { text-align: center; width: 38px; }
+table.clas td.pos { font-family: "Bebas Neue", sans-serif; font-size: 18px; width: 26px; text-align: center; }
+table.clas td.pts { font-family: "Bebas Neue", sans-serif; font-size: 20px; color: var(--gold); }
+table.clas .tname { font-weight: 700; line-height: 1.2; }
+table.clas .form { margin-top: 3px; font-size: 11px; }
+table.clas .form i { display: inline-block; width: 15px; height: 15px; line-height: 15px; text-align: center; border-radius: 4px; font-style: normal; font-weight: 800; font-size: 10px; margin-right: 2px; }
+.form .fG { background: rgba(60,207,122,.25); color: var(--ok); }
+.form .fE { background: rgba(240,195,73,.25); color: var(--draw); }
+.form .fP { background: rgba(255,93,108,.25); color: var(--ko); }
+textarea { resize: vertical; }
