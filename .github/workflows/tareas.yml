@@ -11,7 +11,7 @@ on:
       tarea:
         description: "Qué ejecutar"
         type: choice
-        options: [sync, entreno, inicializar, cargar-partidos, cargar-clasificacion, prueba-notificacion]
+        options: [sync, entreno, inicializar, cargar-partidos, cargar-clasificacion, publicar-reglas, prueba-notificacion]
         default: sync
 
 jobs:
@@ -50,6 +50,8 @@ jobs:
         run: python load_matches.py && python sync_liga.py
       - if: steps.t.outputs.tarea == 'cargar-clasificacion'
         run: python load_standings.py
+      - if: steps.t.outputs.tarea == 'publicar-reglas'
+        run: python deploy_rules.py
       - if: steps.t.outputs.tarea == 'prueba-notificacion'
         run: python test_push.py
 

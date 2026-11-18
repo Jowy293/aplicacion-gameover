@@ -198,3 +198,21 @@ table.clas .form i { display: inline-block; width: 15px; height: 15px; line-heig
 .form .fE { background: rgba(240,195,73,.25); color: var(--draw); }
 .form .fP { background: rgba(255,93,108,.25); color: var(--ko); }
 textarea { resize: vertical; }
+
+/* Valoraciones */
+.ratings { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--card-b); }
+.rate-row { border-bottom: 1px solid var(--card-b); }
+.rate-row summary, .rate-row.flat { display: grid; grid-template-columns: 28px 1fr auto 52px; align-items: center; gap: 8px; padding: 9px 2px; cursor: pointer; list-style: none; }
+.rate-row summary::-webkit-details-marker { display: none; }
+.rate-row .rk { text-align: center; font-family: "Bebas Neue", sans-serif; font-size: 18px; color: var(--muted); }
+.rate-row .nm { font-weight: 700; }
+.rate-row .avg { font-family: "Bebas Neue", sans-serif; font-size: 24px; text-align: center; border-radius: 8px; background: rgba(255,255,255,.08); }
+.rate-row .avg.hi { background: rgba(60,207,122,.2); color: var(--ok); }
+.rate-row .avg.lo { background: rgba(255,93,108,.2); color: var(--ko); }
+.rate-row.meRow { background: rgba(226,189,98,.12); border-radius: 8px; }
+.cmt { font-size: 13px; padding: 7px 10px; margin: 0 0 8px 36px; background: rgba(0,0,0,.25); border-radius: 10px; line-height: 1.4; }
+.card .cmt { margin-left: 0; }
+.rate-edit { padding: 10px 0; border-bottom: 1px solid var(--card-b); }
+.re-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.re-head select { width: 76px; margin-left: auto; padding: 8px; text-align: center; font-weight: 800; }
+.res small.star { display: block; font-family: Inter, sans-serif; font-size: 10px; color: var(--gold); line-height: 1; }

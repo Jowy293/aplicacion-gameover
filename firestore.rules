@@ -58,6 +58,21 @@ service cloud.firestore {
       allow update: if isAdmin() || onlyMyVote();
     }
 
+    // Valoraciones: cada jugador guarda SUS notas (no puede valorarse a sí mismo)
+    match /matches/{mid}/ratings/{rater} {
+      allow read: if signedIn();
+      allow create, update: if hasUser() && rater == myPlayer()
+        && exists(/databases/$(database)/documents/matches/$(mid))
+        && request.resource.data.keys().hasOnly(['scores', 'comments', 'updatedAt'])
+        && request.resource.data.scores is map && request.resource.data.comments is map
+        && request.resource.data.scores.size() <= 40 && request.resource.data.comments.size() <= 40
+        && !(rater in request.resource.data.scores) && !(rater in request.resource.data.comments);
+      allow delete: if isAdmin() || (hasUser() && rater == myPlayer());
+    }
+    match /{path=**}/ratings/{rater} {
+      allow read: if signedIn();
+    }
+
     match /trainings/{id} {
       allow read: if signedIn();
       allow create, delete: if isAdmin();
