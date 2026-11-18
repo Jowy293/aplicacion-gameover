@@ -229,3 +229,5 @@ textarea { resize: vertical; }
 .stepper { display: flex; align-items: center; gap: 6px; flex: none; }
 .stepper input { width: 52px; text-align: center; padding: 7px 4px; font-weight: 800; }
 .stepper .btn { width: 34px; padding: 6px 0; font-size: 18px; line-height: 1; }
+
+[data-act="player"] { cursor: pointer; }

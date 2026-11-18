@@ -316,7 +316,10 @@ function scorersLine(m) {
 function scorersTable() {
   const out = {};
   for (const m of S.matches) for (const [pid, n] of goalsOf(m)) {
-    (out[pid] ||= { goals: 0, matches: 0 }); out[pid].goals += n; out[pid].matches++;
+    (out[pid] ||= { goals: 0, matches: 0, base: 0 }); out[pid].goals += n; out[pid].matches++;
+  }
+  for (const p of S.players.values()) if (+p.goalsBase > 0) {
+    (out[p.id] ||= { goals: 0, matches: 0, base: 0 }); out[p.id].goals += +p.goalsBase; out[p.id].base = +p.goalsBase;
   }
   return Object.entries(out).filter(([pid]) => S.players.has(pid))
     .sort((a, b) => b[1].goals - a[1].goals || a[1].matches - b[1].matches);
@@ -325,46 +328,57 @@ function viewScorers() {
   const t = scorersTable();
   const total = S.matches.reduce((a, m) => a + (+m.golesGO || 0), 0);
   const assigned = t.reduce((a, [, v]) => a + v.goals, 0);
-  if (!t.length) return `<div class="card empty">⚽ Todavía no hay goles apuntados.${isAdmin() ? "<br>Apúntalos desde cada partido con el botón “⚽ Goleadores”." : ""}</div>`;
+  if (!t.length) return `<div class="card empty">⚽ Todavía no hay goles apuntados.${isAdmin() ? "<br>Apúntalos al poner el resultado de cada partido (📝 Resultado y goleadores)." : ""}</div>`;
   const podium = t.slice(0, 3);
   return `<div class="card podium">${[1, 0, 2].filter((i) => podium[i]).map((i) => {
       const [pid, v] = podium[i]; const p = S.players.get(pid);
-      return `<div class="pod p${i + 1}">${jersey(p)}<div class="medal">${["🥇", "🥈", "🥉"][i]}</div><div class="pg">${v.goals}</div><div class="small muted">${v.goals === 1 ? "gol" : "goles"}</div></div>`;
+      return `<div class="pod p${i + 1}" data-act="player" data-id="${pid}">${jersey(p)}<div class="medal">${["🥇", "🥈", "🥉"][i]}</div><div class="pg">${v.goals}</div><div class="small muted">${v.goals === 1 ? "gol" : "goles"}</div></div>`;
     }).join("")}</div>
     <div class="card" style="padding:4px 12px">
-      ${t.map(([pid, v], i) => `<div class="rate-row flat ${pid === S.me ? "meRow" : ""}"><span class="rk">${["🥇", "🥈", "🥉"][i] || i + 1}</span>
+      ${t.map(([pid, v], i) => `<div class="rate-row flat ${pid === S.me ? "meRow" : ""}" data-act="player" data-id="${pid}"><span class="rk">${["🥇", "🥈", "🥉"][i] || i + 1}</span>
         <span class="nm">${esc(pname(pid))} <span class="muted small">#${esc(S.players.get(pid)?.number ?? "")}</span></span>
-        <span class="muted small">${v.matches} ${v.matches === 1 ? "partido" : "partidos"}</span><span class="avg hi">${v.goals}</span></div>`).join("")}
+        <span class="muted small">${v.matches ? `${v.matches} ${v.matches === 1 ? "partido" : "partidos"}` : ""}</span><span class="avg hi">${v.goals}</span></div>`).join("")}
     </div>
     <p class="muted small" style="text-align:center">${assigned} de ${total} goles del equipo apuntados</p>`;
 }
-function goalsForm(mid) {
-  const m = S.matches.find((x) => x.id === mid);
+function scorersInputs(m) {
   const list = sortedPlayers().filter((p) => p.position !== "Entrenador")
     .sort((a, b) => (m.votes?.[b.id] === "si") - (m.votes?.[a.id] === "si"));
-  openModal(`<form data-form="goals" data-id="${mid}">
-    <h3>⚽ Goleadores · ${m.isHome !== false ? "vs" : "@"} ${esc(m.rival)}</h3>
-    <p class="muted small">Marcador: GAME OVER ${m.golesGO ?? "?"} - ${m.golesRival ?? "?"} ${esc(m.rival)}. Pon cuántos goles marcó cada uno.</p>
+  return `<div class="bebas" style="font-size:20px;margin-top:14px">⚽ ¿Quién ha marcado?</div>
     ${list.map((p) => `<div class="goal-edit"><span><b>${esc(p.name)}</b> <span class="muted small">#${esc(p.number)}</span>${m.votes?.[p.id] === "si" ? ` <span class="tag ok">fue</span>` : ""}</span>
       <span class="stepper"><button type="button" class="btn sm" data-act="g-minus">−</button><input type="number" name="g_${p.id}" min="0" max="30" value="${m.goals?.[p.id] || 0}"><button type="button" class="btn sm" data-act="g-plus">+</button></span></div>`).join("")}
-    <p class="muted small" id="gsum"></p>
+    <p class="muted small" id="gsum"></p>`;
+}
+function goalsForm(mid) {
+  const m = S.matches.find((x) => x.id === mid);
+  openModal(`<form data-form="goals" data-id="${mid}">
+    <h3>📝 Resultado · ${m.isHome !== false ? "vs" : "@"} ${esc(m.rival)}</h3>
+    <div class="row2"><div><label>Goles Game Over</label><input type="number" min="0" name="golesGO" value="${esc(m.golesGO ?? "")}"></div>
+      <div><label>Goles ${esc(m.rival)}</label><input type="number" min="0" name="golesRival" value="${esc(m.golesRival ?? "")}"></div></div>
+    ${scorersInputs(m)}
     <div class="acts"><button type="button" class="btn" data-act="close">Cancelar</button><button class="btn primary" type="submit">Guardar</button></div>
   </form>`);
   updateGoalSum();
 }
 function updateGoalSum() {
-  const f = $modal.querySelector('[data-form="goals"]'); if (!f) return;
-  const m = S.matches.find((x) => x.id === f.dataset.id);
-  const sum = [...f.querySelectorAll("input[type=number]")].reduce((a, i) => a + (+i.value || 0), 0);
-  const el = f.querySelector("#gsum");
-  const exp = m.golesGO == null ? null : +m.golesGO;
-  el.textContent = `Total apuntado: ${sum}${exp != null ? ` de ${exp}` : ""}${exp != null && sum > exp ? " ⚠️ hay más goles que en el marcador" : ""}`;
+  const f = $modal.querySelector("form"); const el = f?.querySelector("#gsum"); if (!el) return;
+  const sum = [...f.querySelectorAll('input[name^="g_"]')].reduce((a, i) => a + (+i.value || 0), 0);
+  const go = f.querySelector('input[name="golesGO"]');
+  const exp = go && go.value !== "" ? +go.value : null;
+  el.textContent = `Goles apuntados: ${sum}${exp != null ? ` de ${exp}` : ""}${exp != null && sum > exp ? " ⚠️ hay más goles que en el marcador" : ""}`;
 }
-async function saveGoals(form) {
+const readGoals = (form) => {
   const goals = {};
   for (const [k, v] of new FormData(form).entries()) if (k.startsWith("g_") && +v > 0) goals[k.slice(2)] = Math.min(30, Math.floor(+v));
-  await updateDoc(doc(db, "matches", form.dataset.id), { goals });
-  toast("Goleadores guardados ⚽");
+  return goals;
+};
+async function saveGoals(form) {
+  const f = Object.fromEntries(new FormData(form));
+  await updateDoc(doc(db, "matches", form.dataset.id), {
+    golesGO: f.golesGO === "" ? null : +f.golesGO, golesRival: f.golesRival === "" ? null : +f.golesRival,
+    goals: readGoals(form), updatedAt: serverTimestamp(),
+  });
+  toast("Resultado y goleadores guardados ⚽");
 }
 
 function nextMatch() {
@@ -391,7 +405,7 @@ function matchCard(m, hero) {
     <div class="when">
       ${d ? `<div class="big">${cap(fmtDay(d))}</div>${m.timeKnown ? `<div>🕘 ${fmtTime(d)} h</div>` : `<div class="muted">Hora pendiente de publicar</div>`}` : `<div class="muted">Fecha por confirmar</div>`}
       ${m.venue ? `<div class="muted small">📍 ${esc(m.venue)}</div>` : ""}
-      ${isAdmin() ? `<button class="btn sm" style="margin-top:10px" data-act="date-edit" data-id="${m.id}">📅 Cambiar fecha y hora</button>` : ""}
+      ${isAdmin() ? `<button class="btn sm" style="margin-top:10px" data-act="date-edit" data-id="${m.id}">📅 Cambiar fecha y hora</button>${matchStarted(m) ? ` <button class="btn sm wine" style="margin-top:10px" data-act="goals" data-id="${m.id}">📝 Resultado</button>` : ""}` : ""}
     </div>
     ${m.pollDeadline ? pollBlock("match", m) : (!r ? `<p class="countdown">La votación de asistencia se abrirá cuando se publique la hora del partido.</p>` : "")}
   </div>`;
@@ -595,7 +609,7 @@ function openMatchModal(id) {
   S.openMatch = id;
   openModal(`${matchCard(m, false).replace('class="card ', 'class="card-plain ')}
     ${ratingsBlock(m)}
-    <div class="acts"><button class="btn" data-act="close">Cerrar</button>${isAdmin() ? `${matchStarted(m) ? `<button class="btn wine" data-act="goals" data-id="${id}">⚽ Goleadores</button>` : ""}<button class="btn primary" data-act="match-edit" data-id="${id}">Editar</button>` : ""}</div>`);
+    <div class="acts"><button class="btn" data-act="close">Cerrar</button>${isAdmin() ? `${matchStarted(m) ? `<button class="btn wine" data-act="goals" data-id="${id}">📝 Resultado y goleadores</button>` : ""}<button class="btn primary" data-act="match-edit" data-id="${id}">Editar</button>` : ""}</div>`);
 }
 function refreshMatchModal() {
   if ($modal.open && S.openMatch && $modal.querySelector(".ratings")) {
@@ -608,6 +622,38 @@ function refreshMatchModal() {
 function lastPlayed() {
   const past = S.matches.filter((m) => matchStarted(m) && toDate(m.date) && Date.now() - toDate(m.date) < 10 * 864e5);
   return past[past.length - 1];
+}
+
+// ----- perfil de un jugador (cualquiera) -----
+function playerGoals(pid) {
+  const list = S.matches.filter((m) => m.goals?.[pid] > 0).map((m) => ({ m, n: m.goals[pid] }));
+  const base = +S.players.get(pid)?.goalsBase || 0;
+  return { list, base, total: base + list.reduce((a, x) => a + x.n, 0) };
+}
+function goalsListHtml(pid) {
+  const g = playerGoals(pid);
+  if (!g.total) return `<p class="muted small">Todavía sin goles esta temporada.</p>`;
+  return `${g.list.map(({ m, n }) => `<div class="rate-row flat" data-act="match" data-id="${m.id}"><span class="rk">${crestImg(m.crest)}</span>
+      <span class="nm">${m.isHome !== false ? "vs" : "@"} ${esc(m.rival)} <span class="muted small">${toDate(m.date) ? fmtShort(toDate(m.date)) : ""}${resultOf(m) ? ` · ${m.golesGO}-${m.golesRival}` : ""}</span></span>
+      <span></span><span class="avg hi">${n}</span></div>`).join("")}
+    ${g.base ? `<div class="rate-row flat"><span class="rk">⚽</span><span class="nm">Goles anteriores <span class="muted small">(sin partido asignado)</span></span><span></span><span class="avg hi">${g.base}</span></div>` : ""}`;
+}
+function playerModal(pid) {
+  const p = S.players.get(pid); if (!p) return;
+  const g = playerGoals(pid);
+  const r = seasonRatings()[pid];
+  const att = S.matches.filter((m) => toDate(m.pollDeadline) && toDate(m.pollDeadline) < new Date());
+  const went = att.filter((m) => m.votes?.[pid] === "si").length;
+  openModal(`<div class="profile">${jersey(p)}
+    <h2 style="margin-top:6px">${esc(p.fullName || p.name)}</h2>
+    <div class="muted">${p.position === "Entrenador" ? "Entrenador" : "Dorsal " + esc(p.number)} · GAME OVER FC</div>
+    ${p.position !== "Entrenador" ? `<div class="stats">
+      <div class="stat"><div class="v">⚽ ${g.total}</div><div class="l">Goles</div></div>
+      <div class="stat"><div class="v">⭐ ${fmtAvg(r?.avg)}</div><div class="l">Valoración</div></div>
+      <div class="stat"><div class="v">${went}/${att.length}</div><div class="l">Partidos</div></div>
+    </div>` : ""}</div>
+    ${p.position !== "Entrenador" ? `<h3 style="margin-top:16px">⚽ Goles</h3>${goalsListHtml(pid)}` : ""}
+    <div class="acts">${isAdmin() ? `<button class="btn" data-act="player-edit" data-id="${pid}">Editar</button>` : ""}<button class="btn primary" data-act="close">Cerrar</button></div>`);
 }
 
 // ----- perfil -----
@@ -637,9 +683,10 @@ function viewProfile() {
       ${p.position !== "Entrenador" ? (() => { const g = scorersTable().find(([pid]) => pid === S.me); return `<div class="stat" style="margin-top:10px"><div class="v">⚽ ${g ? g[1].goals : 0}</div><div class="l">Goles esta temporada${g ? ` · en ${g[1].matches} ${g[1].matches === 1 ? "partido" : "partidos"}` : ""}</div></div>`; })() : ""}
       ${p.position !== "Entrenador" ? `<div class="stat" style="margin-top:10px"><div class="v">⭐ ${fmtAvg(my?.avg)}</div><div class="l">Media de valoraciones${my ? ` · ${my.n} notas en ${my.matches.size} ${my.matches.size === 1 ? "partido" : "partidos"}` : ""}</div></div>` : ""}
     </div>
+    ${p.position !== "Entrenador" ? `<div class="card"><h3>⚽ Mis goles</h3>${goalsListHtml(S.me)}</div>` : ""}
     ${myComments.length ? `<div class="card"><h3>💬 Lo que dicen de ti</h3>${myComments.map((c) => `<div class="cmt"><b>${esc(pname(c.by))}</b>${c.score ? ` <span class="muted">(${c.score})</span>` : ""} · <span class="muted small">${c.m.isHome !== false ? "vs" : "@"} ${esc(c.m.rival)}</span><br>${esc(c.text)}</div>`).join("")}</div>` : ""}
     <div class="card"><h3>🏆 Ranking de valoraciones</h3>
-      ${ranking.length ? ranking.map(([pid, v], i) => `<div class="rate-row flat ${pid === S.me ? "meRow" : ""}"><span class="rk">${["🥇", "🥈", "🥉"][i] || i + 1}</span><span class="nm">${esc(pname(pid))}</span><span class="muted small">${v.matches.size} ${v.matches.size === 1 ? "partido" : "partidos"}</span><span class="avg ${v.avg >= 7 ? "hi" : v.avg < 5 ? "lo" : ""}">${fmtAvg(v.avg)}</span></div>`).join("")
+      ${ranking.length ? ranking.map(([pid, v], i) => `<div class="rate-row flat ${pid === S.me ? "meRow" : ""}" data-act="player" data-id="${pid}"><span class="rk">${["🥇", "🥈", "🥉"][i] || i + 1}</span><span class="nm">${esc(pname(pid))}</span><span class="muted small">${v.matches.size} ${v.matches.size === 1 ? "partido" : "partidos"}</span><span class="avg ${v.avg >= 7 ? "hi" : v.avg < 5 ? "lo" : ""}">${fmtAvg(v.avg)}</span></div>`).join("")
         : `<p class="muted small">Aún no hay valoraciones. Después de cada partido, valorad a los compañeros desde el partido.</p>`}
     </div>
     <div class="card">
@@ -648,7 +695,8 @@ function viewProfile() {
       <button class="btn primary block" data-act="notif">🔔 ${("Notification" in window) && Notification.permission === "granted" ? "Volver a registrar este móvil" : "Activar notificaciones"}</button>
     </div>
     <div class="section-title"><h3>Plantilla</h3></div>
-    <div class="pick-grid">${sortedPlayers().map((x) => `<div class="pick" style="cursor:default">${jersey(x)}<div class="lbl">${esc(x.name)}</div></div>`).join("")}</div>`;
+    <p class="muted small">Toca una camiseta para ver el perfil del jugador.</p>
+    <div class="pick-grid">${sortedPlayers().map((x) => `<div class="pick" data-act="player" data-id="${x.id}">${jersey(x)}<div class="lbl">${esc(x.name)}${playerGoals(x.id).total ? ` · ⚽ ${playerGoals(x.id).total}` : ""}</div></div>`).join("")}</div>`;
 }
 
 // ---------- notificaciones push ----------
@@ -782,6 +830,7 @@ function matchForm(m = {}) {
     <label>Pabellón</label><input name="venue" value="${esc(m.venue || "")}">
     <div class="row2"><div><label>Goles Game Over</label><input type="number" min="0" name="golesGO" value="${esc(m.golesGO ?? "")}"></div>
       <div><label>Goles rival</label><input type="number" min="0" name="golesRival" value="${esc(m.golesRival ?? "")}"></div></div>
+    ${m.id ? scorersInputs(m) : ""}
     <label>Cierre de la votación (vacío = automático: ${DAYS[S.cfg.pollWeekday]} ${S.cfg.pollHour}:00)</label>
     <input type="datetime-local" name="pollDeadline" value="${toLocalInput(toDate(m.pollDeadline))}">
     <label class="check"><input type="checkbox" name="manual" ${m.manual || !m.id ? "checked" : ""}> No sobrescribir con la web de la liga</label>
@@ -837,6 +886,7 @@ function playerForm(p = {}) {
       <div><label>Dorsal</label><input name="number" required value="${esc(p.number ?? "")}"></div></div>
     <label>Nombre completo</label><input name="fullName" value="${esc(p.fullName || "")}">
     <label>Posición</label><select name="position">${["Jugador", "Portero", "Entrenador"].map((x) => `<option ${p.position === x ? "selected" : ""}>${x}</option>`).join("")}</select>
+    <label>Goles anteriores sin partido asignado</label><input type="number" min="0" name="goalsBase" value="${esc(p.goalsBase || 0)}">
     <div class="acts">${p.id ? `<button type="button" class="btn" data-act="player-del" data-id="${p.id}">🗑️ Borrar</button>` : ""}
       <button type="button" class="btn" data-act="close">Cancelar</button><button class="btn primary" type="submit">Guardar</button></div>
   </form>`);
@@ -857,6 +907,7 @@ async function saveMatch(form) {
     golesGO: f.golesGO === "" ? null : +f.golesGO, golesRival: f.golesRival === "" ? null : +f.golesRival,
     pollDeadline: dl ? Timestamp.fromDate(dl) : null, manual: !!f.manual, updatedAt: serverTimestamp(),
   };
+  if (form.querySelector('input[name^="g_"]')) data.goals = readGoals(form);
   if (!old) Object.assign(data, { votes: {}, notified: false, source: "admin" });
   await setDoc(doc(db, "matches", id), data, { merge: true });
   toast("Partido guardado");
@@ -876,7 +927,7 @@ async function saveTraining(form) {
 
 async function savePlayer(form) {
   const f = Object.fromEntries(new FormData(form));
-  const data = { name: f.name.trim().toUpperCase(), number: f.number.trim(), fullName: f.fullName.trim(), position: f.position };
+  const data = { name: f.name.trim().toUpperCase(), number: f.number.trim(), fullName: f.fullName.trim(), position: f.position, goalsBase: Math.max(0, +f.goalsBase || 0) };
   if (form.dataset.id) await updateDoc(doc(db, "players", form.dataset.id), data);
   else await setDoc(doc(db, "players", `${slug(f.name)}-${slug(f.number)}`), { ...data, role: "player", uid: null, active: true });
   toast("Jugador guardado");
@@ -924,13 +975,14 @@ document.addEventListener("click", async (e) => {
       case "close": S.openMatch = null; return $modal.close();
       case "rate": return rateForm(id);
       case "goals": return goalsForm(id);
+      case "player": return playerModal(id);
       case "g-plus": case "g-minus": {
         const inp = b.parentElement.querySelector("input");
         inp.value = Math.max(0, Math.min(30, (+inp.value || 0) + (act === "g-plus" ? 1 : -1)));
         return updateGoalSum();
       }
       case "rate-all": return rateForm(id, true);
-      case "match-edit": return matchForm(S.matches.find((x) => x.id === id));
+      case "match-edit": matchForm(S.matches.find((x) => x.id === id)); return updateGoalSum();
       case "date-edit": return dateForm(S.matches.find((x) => x.id === id));
       case "train-edit": {
         const t = S.trainings.find((x) => x.id === id);
@@ -991,4 +1043,4 @@ document.addEventListener("submit", async (e) => {
   } catch (err) { toast("Error: " + err.message); }
 });
 
-document.addEventListener("input", (e) => { if (e.target.name?.startsWith("g_")) updateGoalSum(); });
+document.addEventListener("input", (e) => { if (e.target.name?.startsWith("g_") || e.target.name === "golesGO") updateGoalSum(); });

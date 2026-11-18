@@ -12,7 +12,7 @@ on:
       tarea:
         description: "Qué ejecutar"
         type: choice
-        options: [sync, entreno, inicializar, cargar-partidos, cargar-clasificacion, publicar-reglas, ajustes-entreno, prueba-notificacion]
+        options: [sync, entreno, inicializar, cargar-partidos, cargar-clasificacion, publicar-reglas, ajustes-entreno, migrar, prueba-notificacion]
         default: sync
 
 jobs:
@@ -55,6 +55,8 @@ jobs:
         run: python deploy_rules.py
       - if: steps.t.outputs.tarea == 'ajustes-entreno'
         run: python -c "from common import init; init().collection('config').document('app').set({'trainingTime':'20:00','trainingDeadlineHour':20,'trainingOpenHour':10,'trainingAuto':True}, merge=True); print('Ajustes de entreno guardados')"
+      - if: steps.t.outputs.tarea == 'migrar'
+        run: python migrate.py
       - if: steps.t.outputs.tarea == 'prueba-notificacion'
         run: python test_push.py
 
