@@ -243,6 +243,11 @@ def main():
     db = init()
     cfg = get_config(db)
     url = cfg.get("leagueUrl") or os.environ.get("LEAGUE_URL")
+    if not cfg.get("leagueSync", False):
+        # ligacomarcal.com bloquea las visitas automáticas (403): los partidos los gestiona el admin.
+        print("Lectura de la web de la liga desactivada (config/app.leagueSync = false).")
+        notify_pending(db, cfg)
+        return
     try:
         html = fetch(url)
         soup = BeautifulSoup(html, "html.parser")
