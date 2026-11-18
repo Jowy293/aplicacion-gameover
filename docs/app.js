@@ -273,6 +273,17 @@ const resultOf = (m) => {
   return a > b ? "W" : a < b ? "L" : "D";
 };
 const teams = (m) => m.isHome !== false ? ["GAME OVER FC", m.rival] : [m.rival, "GAME OVER FC"];
+const GO_CREST = "crests/game-over-fc.png";
+const CRESTS = {
+  "atletico-salesiano": "Atlético Salesiano", "bar-ferrocarril-fs": "Bar Ferrocarril FS", "birrarreal-fs": "Birrarreal FS",
+  "buena-onda-fs-b": 'Buena Onda FS "B"', "cd-santa-rosa-copisan": "C.D. Santa Rosa Copisan", "colpet-fs": "Colpet FS",
+  "dkv-brownsea-fs": "DKV-Brownsea FS", "fc-racing-alcoy": "FC Racing Alcoy", "la-cuina-de-jairo": "La Cuina de Jairo",
+  "pd-juan-xxiii-b": "PD Juan XXIII B", "sercomac-fc": "Sercomac FC", "tex-textiles-fs": "Tex-Textiles FS",
+};
+const crestImg = (src, cls = "") => src
+  ? `<img class="crest-img ${cls}" src="${esc(src)}" alt="" loading="lazy">`
+  : `<span class="crest-img ph ${cls}">⚽</span>`;
+const crests = (m) => m.isHome !== false ? [GO_CREST, m.crest] : [m.crest, GO_CREST];
 const score = (m) => resultOf(m) ? (m.isHome !== false ? `${m.golesGO} - ${m.golesRival}` : `${m.golesRival} - ${m.golesGO}`) : "vs";
 
 function nextMatch() {
@@ -283,6 +294,7 @@ function nextMatch() {
 function matchCard(m, hero) {
   const d = toDate(m.date);
   const [h, a] = teams(m);
+  const [ch, ca] = crests(m);
   const r = resultOf(m);
   return `<div class="card ${hero ? "hero" : ""}">
     <div style="display:flex;justify-content:space-between;align-items:center">
@@ -290,13 +302,14 @@ function matchCard(m, hero) {
       <span class="tag">${m.isHome !== false ? "🏠 Local" : "🚌 Visitante"}</span>
     </div>
     <div class="vs">
-      <div class="team ${m.isHome !== false ? "go" : ""}">${esc(h)}</div>
+      <div class="team ${m.isHome !== false ? "go" : ""}">${crestImg(ch, "lg")}${esc(h)}</div>
       <div class="score ${r ? "res " + r : ""}">${score(m)}</div>
-      <div class="team ${m.isHome === false ? "go" : ""}">${esc(a)}</div>
+      <div class="team ${m.isHome === false ? "go" : ""}">${crestImg(ca, "lg")}${esc(a)}</div>
     </div>
     <div class="when">
       ${d ? `<div class="big">${cap(fmtDay(d))}</div>${m.timeKnown ? `<div>🕘 ${fmtTime(d)} h</div>` : `<div class="muted">Hora pendiente de publicar</div>`}` : `<div class="muted">Fecha por confirmar</div>`}
       ${m.venue ? `<div class="muted small">📍 ${esc(m.venue)}</div>` : ""}
+      ${isAdmin() ? `<button class="btn sm" style="margin-top:10px" data-act="date-edit" data-id="${m.id}">📅 Cambiar fecha y hora</button>` : ""}
     </div>
     ${m.pollDeadline ? pollBlock("match", m) : (!r ? `<p class="countdown">La votación de asistencia se abrirá cuando se publique la hora del partido.</p>` : "")}
   </div>`;
@@ -313,11 +326,11 @@ function viewMatches() {
       ${S.matches.length ? S.matches.map((m) => {
         const d = toDate(m.date), r = resultOf(m);
         return `<div class="match-row" data-act="match" data-id="${m.id}">
-          <div class="j">${m.jornada ? "J" + m.jornada : "–"}<small>${d ? fmtShort(d) : ""}</small></div>
-          <div class="t">${m.isHome !== false ? "vs " : "@ "}${esc(m.rival)}<small>${d && m.timeKnown ? fmt(d, { weekday: "short" }) + " " + fmtTime(d) : d ? "Hora por publicar" : ""}${m.venue ? " · " + esc(m.venue) : ""}</small></div>
+          <div class="j">${d ? fmtShort(d) : "–"}<small>${m.jornada ? "J" + m.jornada : d ? fmt(d, { weekday: "short" }) : ""}</small></div>
+          <div class="t"><span class="rowteam">${crestImg(m.crest)}<span>${m.isHome !== false ? "vs " : "@ "}${esc(m.rival)}</span></span><small>${d && m.timeKnown ? fmtTime(d) + " h" : d ? (resultOf(m) ? "" : "Hora por publicar") : ""}${m.venue ? " · " + esc(m.venue) : ""}</small></div>
           <div class="res ${r || ""}">${r ? `${m.golesGO}-${m.golesRival}` : m.id === nx?.id ? "Próx." : "—"}</div>
         </div>`;
-      }).join("") : `<div class="empty">Aún no hay partidos. Se cargarán automáticamente desde la web de la liga.</div>`}
+      }).join("") : `<div class="empty">Aún no hay partidos.</div>`}
     </div>
     <p class="muted small" style="text-align:center">Datos de <a href="${esc(S.cfg.leagueUrl || "https://ligacomarcal.com")}" target="_blank" rel="noopener">ligacomarcal.com</a>${S.clas?.updatedAt ? " · actualizado " + fmt(toDate(S.clas.updatedAt), { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}</p>`;
 }
@@ -436,7 +449,7 @@ function adminMatches() {
       const d = toDate(m.date);
       return `<div class="admin-item"><div><b>${m.jornada ? "J" + m.jornada + " · " : ""}${m.isHome !== false ? "vs" : "@"} ${esc(m.rival)}</b><br>
         <span class="muted small">${d ? fmtShort(d) + (m.timeKnown ? " " + fmtTime(d) : " (sin hora)") : "sin fecha"} ${resultOf(m) ? "· " + m.golesGO + "-" + m.golesRival : ""} ${m.manual ? "· ✋ manual" : ""}</span></div>
-        <div class="acts"><button class="btn sm" data-act="match-edit" data-id="${m.id}">Editar</button></div></div>`;
+        <div class="acts"><button class="btn sm" data-act="date-edit" data-id="${m.id}">📅</button><button class="btn sm" data-act="match-edit" data-id="${m.id}">Editar</button></div></div>`;
     }).join("") || `<div class="empty">Sin partidos</div>`}</div>`;
 }
 
@@ -499,6 +512,8 @@ function matchForm(m = {}) {
     <div class="row2"><div><label>Jornada</label><input type="number" name="jornada" value="${esc(m.jornada ?? "")}"></div>
       <div><label>Condición</label><select name="isHome"><option value="1" ${m.isHome !== false ? "selected" : ""}>Local</option><option value="0" ${m.isHome === false ? "selected" : ""}>Visitante</option></select></div></div>
     <label>Rival</label><input name="rival" required value="${esc(m.rival || "")}">
+    <label>Escudo del rival</label><select name="crest"><option value="">(sin escudo)</option>${Object.entries(CRESTS).map(([k, n]) =>
+      `<option value="crests/${k}.png" ${m.crest === `crests/${k}.png` ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
     <div class="row2"><div><label>Fecha</label><input type="date" name="date" value="${toDateInput(d)}"></div>
       <div><label>Hora (vacío = sin publicar)</label><input type="time" name="time" value="${m.timeKnown ? toTimeInput(d) : ""}"></div></div>
     <label>Pabellón</label><input name="venue" value="${esc(m.venue || "")}">
@@ -510,6 +525,32 @@ function matchForm(m = {}) {
     <div class="acts">${m.id ? `<button type="button" class="btn" data-act="match-del" data-id="${m.id}">🗑️ Borrar</button>` : ""}
       <button type="button" class="btn" data-act="close">Cancelar</button><button class="btn primary" type="submit">Guardar</button></div>
   </form>`);
+}
+
+function dateForm(m) {
+  const d = toDate(m.date);
+  openModal(`<form data-form="date" data-id="${m.id}">
+    <h3>📅 Fecha y hora</h3>
+    <p class="muted small">${m.isHome !== false ? "GAME OVER FC vs " : ""}${esc(m.rival)}${m.isHome === false ? " vs GAME OVER FC" : ""}</p>
+    <div class="row2"><div><label>Día</label><input type="date" name="date" required value="${toDateInput(d)}"></div>
+      <div><label>Hora</label><input type="time" name="time" value="${m.timeKnown ? toTimeInput(d) : ""}"></div></div>
+    <label>Pabellón</label><input name="venue" value="${esc(m.venue || "")}">
+    <p class="muted small">Al guardar la hora se abre la votación (cierra el ${DAYS[S.cfg.pollWeekday].toLowerCase()} a las ${S.cfg.pollHour}:00 de esa semana) y se avisa a todos con una notificación.</p>
+    <div class="acts"><button type="button" class="btn" data-act="close">Cancelar</button><button class="btn primary" type="submit">Guardar</button></div>
+  </form>`);
+}
+
+async function saveDate(form) {
+  const f = Object.fromEntries(new FormData(form));
+  const m = S.matches.find((x) => x.id === form.dataset.id);
+  const date = new Date(`${f.date}T${f.time || "00:00"}`);
+  const timeKnown = !!f.time;
+  const dl = timeKnown ? computeDeadline(date) : null;
+  await updateDoc(doc(db, "matches", m.id), {
+    date: Timestamp.fromDate(date), timeKnown, venue: f.venue.trim(),
+    pollDeadline: dl ? Timestamp.fromDate(dl) : null, manual: true, updatedAt: serverTimestamp(),
+  });
+  toast(timeKnown ? "Hora guardada · se avisará a todos 🔔" : "Fecha guardada");
 }
 
 function trainingForm(t = {}) {
@@ -543,14 +584,16 @@ async function saveMatch(form) {
   const id = form.dataset.id || `m-${f.date || "sin-fecha"}-${slug(f.rival)}`;
   let date = null, timeKnown = false;
   if (f.date) { date = new Date(`${f.date}T${f.time || "00:00"}`); timeKnown = !!f.time; }
-  let dl = f.pollDeadline ? new Date(f.pollDeadline) : (timeKnown ? computeDeadline(date) : null);
+  const old = S.matches.find((m) => m.id === id);
+  const dateChanged = !old || toDate(old.date)?.getTime() !== date?.getTime();
+  const dlUntouched = old && f.pollDeadline === toLocalInput(toDate(old.pollDeadline));
+  let dl = f.pollDeadline && !(dateChanged && dlUntouched) ? new Date(f.pollDeadline) : (timeKnown ? computeDeadline(date) : null);
   const data = {
     jornada: f.jornada ? +f.jornada : null, rival: f.rival.trim(), isHome: f.isHome === "1",
-    date: date ? Timestamp.fromDate(date) : null, timeKnown, venue: f.venue.trim(),
+    date: date ? Timestamp.fromDate(date) : null, timeKnown, venue: f.venue.trim(), crest: f.crest || null,
     golesGO: f.golesGO === "" ? null : +f.golesGO, golesRival: f.golesRival === "" ? null : +f.golesRival,
     pollDeadline: dl ? Timestamp.fromDate(dl) : null, manual: !!f.manual, updatedAt: serverTimestamp(),
   };
-  const old = S.matches.find((m) => m.id === id);
   if (!old) Object.assign(data, { votes: {}, notified: false, source: "admin" });
   await setDoc(doc(db, "matches", id), data, { merge: true });
   toast("Partido guardado");
@@ -618,6 +661,7 @@ document.addEventListener("click", async (e) => {
       }
       case "close": return $modal.close();
       case "match-edit": return matchForm(S.matches.find((x) => x.id === id));
+      case "date-edit": return dateForm(S.matches.find((x) => x.id === id));
       case "train-edit": {
         const t = S.trainings.find((x) => x.id === id);
         if (t) return trainingForm(t);
@@ -652,6 +696,7 @@ document.addEventListener("submit", async (e) => {
   try {
     const kind = form.dataset.form;
     if (kind === "match") await saveMatch(form);
+    if (kind === "date") await saveDate(form);
     if (kind === "training") await saveTraining(form);
     if (kind === "player") await savePlayer(form);
     if (kind === "settings") {

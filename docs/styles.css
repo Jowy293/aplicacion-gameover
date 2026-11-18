@@ -180,3 +180,9 @@ dialog .acts .btn { flex: 1; }
 .ball::after { content: "⬢"; position: absolute; inset: 0; display: grid; place-items: center; color: #222; font-size: 20px; }
 @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-22px); } }
 .empty { text-align: center; color: var(--muted); padding: 24px 8px; }
+
+/* Escudos */
+.crest-img { width: 28px; height: 28px; object-fit: contain; flex: none; display: inline-grid; place-items: center; font-size: 16px; }
+.crest-img.lg { width: 64px; height: 64px; display: block; margin: 0 auto 6px; font-size: 34px; filter: drop-shadow(0 3px 6px rgba(0,0,0,.45)); }
+.crest-img.ph { opacity: .5; }
+.rowteam { display: flex; align-items: center; gap: 8px; }
