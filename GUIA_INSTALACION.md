@@ -12,34 +12,17 @@ App del equipo para **Android e iPhone**: elegir tu jugador (bloqueado para el r
 
 ---
 
-## PARTE A · Montarlo (solo una vez, lo hace el admin)
+## PARTE A · Montaje ✅ (ya hecho)
 
-### ✅ Ya hecho
-- Código subido a <https://github.com/Jowy293/aplicacion-gameover>.
-- GitHub Pages activado: la app está en **<https://jowy293.github.io/aplicacion-gameover/>**.
-- Variable `APP_URL` creada en el repositorio.
+- Código en <https://github.com/Jowy293/aplicacion-gameover> y app publicada en **<https://jowy293.github.io/aplicacion-gameover/>**.
+- Proyecto Firebase `game-over-fc`: acceso anónimo, base de datos Firestore con las reglas de [`firestore.rules`](firestore.rules) y notificaciones web.
+- Configuración de la app en [`docs/firebase-config.js`](docs/firebase-config.js).
+- Secreto `FIREBASE_SERVICE_ACCOUNT` y variable `APP_URL` en GitHub. Tareas automáticas en [`.github/workflows/tareas.yml`](.github/workflows/tareas.yml).
+- Plantilla cargada con **JOWY #22 (Joan Brotons Vidal) como administrador**.
 
-### 1. Crear el proyecto de Firebase ⏱️ ~15 min
-1. Entra en <https://console.firebase.google.com> con tu cuenta de Google → **Crear un proyecto** → nombre `game-over-fc` (Google Analytics: desactivado).
-2. **Añadir app web**: pulsa el icono **`</>`** → apodo `Game Over FC` → **Registrar app**. Copia el bloque `firebaseConfig = { apiKey: ..., ... }`.
-3. **Authentication** (menú izquierdo › Compilación) → **Comenzar** → *Método de inicio de sesión* → **Anónimo** → Habilitar → Guardar.
-   Después, en **Authentication → Configuración → Dominios autorizados** → **Agregar dominio** → `jowy293.github.io`.
-4. **Firestore Database** → **Crear base de datos** → ubicación `eur3 (europe-west)` → *modo de producción* → Crear.
-   Pestaña **Reglas** → borra todo, pega el contenido de [`firestore.rules`](firestore.rules) → **Publicar**.
-5. ⚙️ *Configuración del proyecto* → **Cloud Messaging** → *Certificados push web* → **Generar par de claves**. Copia la clave (empieza por `B...`).
-6. ⚙️ *Configuración del proyecto* → **Cuentas de servicio** → **Generar nueva clave privada** → se descarga un `.json`. **No lo compartas ni lo subas al repositorio.**
+**Probar las notificaciones:** activa los avisos en tu móvil (pestaña Perfil) y en GitHub ve a **Actions → Tareas automáticas → Run workflow → `prueba-notificacion`**.
 
-### 2. Poner la configuración en la app
-Edita [`docs/firebase-config.js`](docs/firebase-config.js) con los datos de 1.2 y la clave de 1.5 (en GitHub: abre el archivo → ✏️ → pega → *Commit changes*). En un par de minutos la app ya conecta.
-
-### 3. Activar las tareas automáticas (sincronizar liga, encuesta de los martes, notificaciones)
-1. Repositorio → **Settings → Secrets and variables → Actions → New repository secret** → nombre `FIREBASE_SERVICE_ACCOUNT` → pega **todo** el contenido del `.json` de 1.6.
-2. Crea el archivo de tareas (el token actual no tiene permiso para subirlo, por eso hay que hacerlo desde la web):
-   en el repositorio → **Add file → Create new file** → nombre `.github/workflows/tareas.yml` → pega el contenido de [`automatizacion/tareas.yml`](automatizacion/tareas.yml) → **Commit changes**.
-3. **Actions → Tareas automáticas → Run workflow** → tarea **`inicializar`**. Carga la plantilla, deja a **JOWY #22 (Joan Brotons Vidal) como admin** y lee la web de la liga.
-
-### 4. Entrar como admin y probar
-Abre la app, elige **JOWY 22** (aparece la pestaña 🛠️ Admin), activa las notificaciones en Perfil y lanza **Run workflow → `prueba-notificacion`**.
+> Si algún día cambias de proyecto de Firebase: rellena `docs/firebase-config.js`, pega las reglas de `firestore.rules`, cambia el secreto `FIREBASE_SERVICE_ACCOUNT` y lanza la tarea **`inicializar`**.
 
 ---
 
@@ -119,5 +102,5 @@ game-over-fc/
 │   ├── training.py         ← encuesta del entreno de los martes
 │   └── test_push.py        ← notificación de prueba
 ├── firestore.rules         ← seguridad: usuarios bloqueados, solo tu voto, solo admins editan
-└── automatizacion/tareas.yml ← horarios automáticos (copiar a .github/workflows/)
+└── .github/workflows/      ← horarios automáticos
 ```

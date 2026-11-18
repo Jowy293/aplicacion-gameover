@@ -1,16 +1,13 @@
-// ============================================================
-//  CONFIGURACIÓN DE FIREBASE  (rellenar siguiendo GUIA_INSTALACION.md, paso 2)
-//  Este archivo lo usan la app y el service worker (notificaciones).
-// ============================================================
+// Configuración de Firebase del proyecto game-over-fc (datos públicos, no son secretos).
+// La usan la app y el service worker (notificaciones).
 self.FIREBASE_CONFIG = {
-  apiKey: "PEGA_AQUI_TU_API_KEY",
-  authDomain: "TU-PROYECTO.firebaseapp.com",
-  projectId: "TU-PROYECTO",
-  storageBucket: "TU-PROYECTO.appspot.com",
-  messagingSenderId: "000000000000",
-  appId: "1:000000000000:web:xxxxxxxxxxxxxxxx",
+  apiKey: "AIzaSyC0_TMFeeSpxhvSMhCATE_e2RjmG8EjG5I",
+  authDomain: "game-over-fc.firebaseapp.com",
+  projectId: "game-over-fc",
+  storageBucket: "game-over-fc.firebasestorage.app",
+  messagingSenderId: "228228664028",
+  appId: "1:228228664028:web:a6806ad2bb87f75bf90219",
 };
 
-// Clave pública de notificaciones web (Firebase > Configuración del proyecto >
-// Cloud Messaging > Certificados push web > "Par de claves")
-self.VAPID_KEY = "PEGA_AQUI_TU_CLAVE_VAPID";
+// Clave pública de notificaciones web (Cloud Messaging > Certificados push web)
+self.VAPID_KEY = "BJCwOwrZKSNv4RTZcBYFrtWHOvFq95v6aYu8v4r5j9HvIRiA7VPYv0PfAa4pdprz5A97n_KHAnKLqsNYHJroVN0";
