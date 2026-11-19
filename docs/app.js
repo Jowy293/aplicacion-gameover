@@ -26,7 +26,7 @@ const db = getFirestore(fb);
 const S = {
   uid: null, me: null, players: new Map(), matches: [], trainings: [],
   cfg: { pollWeekday: 3, pollHour: 20, trainingTime: "20:00", trainingOpenHour: 10, trainingPlace: "", trainingAuto: true },
-  clas: null, ratings: new Map(), myKeys: {}, preds: new Map(), tab: "partidos", adminTab: "partidos", unsub: [], swReg: null,
+  loaded: {}, clas: null, ratings: new Map(), myKeys: {}, preds: new Map(), tab: "partidos", adminTab: "partidos", unsub: [], swReg: null,
 };
 
 // ---------- utilidades ----------
@@ -125,6 +125,7 @@ onAuthStateChanged(auth, async (user) => {
   } catch (e) { return fatal(e.message); }
   S.unsub.push(onSnapshot(collection(db, "players"), (snap) => {
     S.players = new Map(snap.docs.map((d) => [d.id, { id: d.id, ...d.data() }]));
+    S.loaded.players = true;
     if (!S.players.size) $app.innerHTML = `<div class="card empty">Todavía no hay jugadores. El administrador debe ejecutar el paso “Inicializar” de la guía.</div>`;
     route();
   }, (e) => fatal(e.message)));
@@ -197,6 +198,8 @@ function startMain() {
   S.unsub.push(onSnapshot(collection(db, "matches"), (s) => {
     S.matches = s.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) =>
       ((toDate(a.date)?.getTime() ?? 9e15) - (toDate(b.date)?.getTime() ?? 9e15)) || ((a.jornada ?? 999) - (b.jornada ?? 999)));
+    S.loaded.matches = true;
+    if ($modal.open) refreshMatchModal();
     render();
   }));
   S.unsub.push(onSnapshot(collection(db, "trainings"), (s) => {
@@ -207,7 +210,7 @@ function startMain() {
   S.unsub.push(onSnapshot(doc(db, "config", "clasificacion"), (s) => { S.clas = s.exists() ? s.data() : null; render(); }));
   // Valoraciones ANÓNIMAS: matches/{partido}/ratings/{código aleatorio}. Solo mi móvil sabe cuál es mi código
   // (users/{uid}.ratingKeys, que solo puede leer el propio usuario).
-  S.unsub.push(onSnapshot(doc(db, "users", S.uid), (s) => { S.myKeys = s.data()?.ratingKeys || {}; if (!$modal.open) render(); }));
+  S.unsub.push(onSnapshot(doc(db, "users", S.uid), (s) => { S.myKeys = s.data()?.ratingKeys || {}; render(); refreshMatchModal(); }));
   S.unsub.push(onSnapshot(collectionGroup(db, "ratings"), (snap) => {
     const map = new Map();
     for (const d of snap.docs) {
@@ -216,7 +219,7 @@ function startMain() {
       map.get(mid).push({ key: d.id, ...d.data() });
     }
     S.ratings = map;
-    if (!$modal.open) render(); else refreshMatchModal();
+    render(); refreshMatchModal();
   }, (e) => console.warn("valoraciones:", e.message)));
   // Fantasy: matches/{partido}/predictions/{jugador}
   S.unsub.push(onSnapshot(collectionGroup(db, "predictions"), (snap) => {
@@ -227,27 +230,57 @@ function startMain() {
       map.get(mid).set(d.id, d.data());
     }
     S.preds = map;
-    if (!$modal.open) render();
+    render();
   }, (e) => console.warn("fantasy:", e.message)));
   setupForegroundPush();
-  clearInterval(S._tick); S._tick = setInterval(() => { if (!$modal.open && !["admin"].includes(S.tab)) render(); }, 30000);
+  clearInterval(S._tick); S._tick = setInterval(() => { if (!["admin"].includes(S.tab)) render(); }, 30000);
 }
 
 function renderTabs() {
   const tabs = [["partidos", "⚽", "Partidos"], ["entrenos", "🏃", "Entrenos"], ["fantasy", "🎯", "Fantasy"], ["clasif", "🏆", "Clasif."], ["perfil", "👕", "Perfil"]];
   if (isAdmin()) tabs.push(["admin", "🛠️", "Admin"]);
   $tabs.classList.remove("hidden");
-  $tabs.innerHTML = tabs.map(([k, ic, l]) => `<button class="${S.tab === k ? "on" : ""}" data-act="tab" data-tab="${k}"><span class="ic">${ic}</span>${l}</button>`).join("");
+  morph($tabs, tabs.map(([k, ic, l]) => `<button class="${S.tab === k ? "on" : ""}" data-act="tab" data-tab="${k}"><span class="ic">${ic}</span>${l}</button>`).join(""));
 }
 
+// ---------- pintado sin saltos ----------
+// En vez de rehacer toda la pantalla, se compara con la anterior y solo se cambia lo que ha cambiado
+// (así no parpadean las imágenes, no salta el scroll y no se cierran los desplegables).
+function morph(el, html) {
+  const tpl = document.createElement("div");
+  tpl.innerHTML = html;
+  patchChildren(el, tpl);
+}
+const nodeKey = (n) => n.nodeType === 1 ? (n.getAttribute("data-id") || "") + "|" + (n.getAttribute("data-act") || "") + "|" + (n.getAttribute("data-form") || "") : "";
+function patchChildren(a, b) {
+  const an = [...a.childNodes], bn = [...b.childNodes];
+  bn.forEach((y, i) => {
+    const x = an[i];
+    if (!x) a.appendChild(y);
+    else if (x.nodeType !== y.nodeType || x.nodeName !== y.nodeName || nodeKey(x) !== nodeKey(y)) a.replaceChild(y, x);
+    else if (x.nodeType !== 1) { if (x.nodeValue !== y.nodeValue) x.nodeValue = y.nodeValue; }
+    else {
+      for (const { name, value } of [...y.attributes]) if (x.getAttribute(name) !== value) x.setAttribute(name, value);
+      for (const { name } of [...x.attributes]) if (!y.hasAttribute(name) && !(name === "open" && x.nodeName === "DETAILS")) x.removeAttribute(name);
+      if (x === document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(x.nodeName)) return; // no tocar lo que se está escribiendo
+      patchChildren(x, y);
+    }
+  });
+  for (let i = bn.length; i < an.length; i++) a.removeChild(an[i]);
+}
+let renderQueued = false;
 function render() {
+  if (renderQueued) return;
+  renderQueued = true;
+  setTimeout(() => { renderQueued = false; paint(); }, 25); // agrupa varias actualizaciones seguidas en un solo pintado
+}
+function paint() {
   if (!S.me) return;
   if (S.tab === "admin" && !isAdmin()) S.tab = "partidos";
   renderTabs();
-  const scroll = window.scrollY;
   const views = { partidos: viewMatches, entrenos: viewTrainings, fantasy: viewFantasy, clasif: viewClas, perfil: viewProfile, admin: viewAdmin };
-  $app.innerHTML = views[S.tab]();
-  window.scrollTo(0, scroll);
+  const ready = S.loaded.matches && S.loaded.players;
+  morph($app, ready ? views[S.tab]() : `<div class="loading"><div class="ball"></div>Cargando…</div>`);
 }
 
 function notifBanner() {
@@ -636,20 +669,17 @@ async function saveRatings(form) {
   toast("¡Notas guardadas! Son anónimas 🕶️");
 }
 
-function openMatchModal(id) {
+function openMatchModal(id, refresh = false) {
   const m = S.matches.find((x) => x.id === id);
   if (!m) return;
   S.openMatch = id;
-  openModal(`${matchCard(m, false).replace('class="card ', 'class="card-plain ')}
+  (refresh ? updateModal : openModal)(`${matchCard(m, false).replace('class="card ', 'class="card-plain ')}
     ${ratingsBlock(m)}
     <div class="acts"><button class="btn" data-act="close">Cerrar</button>${isAdmin() ? `${matchStarted(m) ? `<button class="btn wine" data-act="goals" data-id="${id}">📝 Resultado</button><button class="btn" data-act="cards" data-id="${id}">🟨🟥</button>` : ""}<button class="btn primary" data-act="match-edit" data-id="${id}">Editar</button>` : ""}</div>`);
 }
 function refreshMatchModal() {
-  if ($modal.open && S.openMatch && $modal.querySelector(".ratings")) {
-    const open = [...$modal.querySelectorAll("details[open] .nm")].map((x) => x.textContent);
-    openMatchModal(S.openMatch);
-    $modal.querySelectorAll("details").forEach((d) => { if (open.includes(d.querySelector(".nm")?.textContent)) d.open = true; });
-  }
+  // solo si lo que está abierto es la ficha del partido (no un formulario)
+  if ($modal.open && S.openMatch && !$modal.querySelector("form") && $modal.querySelector(".card-plain")) openMatchModal(S.openMatch, true);
 }
 // Último partido jugado (para animar a valorar)
 function lastPlayed() {
@@ -1168,7 +1198,12 @@ function adminSettings() {
 }
 
 // ----- formularios del admin (modal) -----
-function openModal(html) { $modal.innerHTML = html; $modal.showModal(); }
+function openModal(html) {
+  if ($modal.open) $modal.scrollTop = 0;
+  $modal.innerHTML = html;
+  if (!$modal.open) $modal.showModal();
+}
+function updateModal(html) { if ($modal.open) morph($modal, html); }
 function confirmBox(title, text) {
   return new Promise((res) => {
     openModal(`<h3>${title}</h3><p class="muted">${text}</p><div class="acts"><button class="btn" data-r="0">Cancelar</button><button class="btn primary" data-r="1">Confirmar</button></div>`);
@@ -1446,3 +1481,5 @@ document.addEventListener("change", (e) => {
   if (box.querySelectorAll("input:checked").length > max) { e.target.checked = false; toast(`Máximo ${max}`); }
 });
 document.addEventListener("input", (e) => { if (e.target.name?.startsWith("g_") || e.target.name === "golesGO") updateGoalSum(); });
+
+$modal.addEventListener("close", () => { S.openMatch = null; });

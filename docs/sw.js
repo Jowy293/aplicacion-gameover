@@ -3,7 +3,7 @@ importScripts("./firebase-config.js");
 importScripts("https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js");
 importScripts("https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js");
 
-const CACHE = "gofc-v12";
+const CACHE = "gofc-v13";
 const SHELL = ["./", "./index.html", "./styles.css", "./app.js", "./firebase-config.js",
   "./manifest.json", "./icons/logo.png?v=3", "./icons/icon-192.png"];
 
@@ -12,7 +12,15 @@ self.addEventListener("install", (e) => {
 });
 self.addEventListener("activate", (e) => {
   e.waitUntil(caches.keys().then((keys) =>
-    Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
+    Promise.all(keys.filter((k) => k !== CACHE && k !== "gofc-fonts").map((k) => caches.delete(k)))).then(() => self.clients.claim()));
+});
+// Fuentes de Google: caché primero (cargan al instante y no hacen saltar el texto)
+self.addEventListener("fetch", (e) => {
+  const url = new URL(e.request.url);
+  if (e.request.method === "GET" && /fonts\.(googleapis|gstatic)\.com$/.test(url.hostname)) {
+    e.respondWith(caches.open("gofc-fonts").then((c) => c.match(e.request).then((hit) => hit ||
+      fetch(e.request).then((r) => { c.put(e.request, r.clone()); return r; }))));
+  }
 });
 // Red primero, caché si no hay conexión (solo archivos propios)
 self.addEventListener("fetch", (e) => {

@@ -18,6 +18,10 @@
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; min-height: 100%; }
+html { scrollbar-gutter: stable; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+/* sin rebote al arrastrar ni zoom por doble toque */
+html, body { overscroll-behavior: none; }
+button, a, input, select, textarea, label, .pick, .slot, [data-act] { touch-action: manipulation; }
 body {
   background: radial-gradient(ellipse at top, #11492e 0%, var(--bg) 55%, #061c11 100%) fixed;
   color: var(--text);
@@ -80,9 +84,9 @@ main { max-width: 680px; margin: 0 auto; padding: 16px; }
 .poll .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0; }
 .btn {
   appearance: none; border: 1px solid var(--card-b); background: rgba(255,255,255,.07); color: var(--text);
-  font: 700 15px Inter, sans-serif; padding: 13px 14px; border-radius: 12px; cursor: pointer; transition: transform .08s, background .2s;
+  font: 700 15px Inter, sans-serif; padding: 13px 14px; border-radius: 12px; cursor: pointer; transition: background-color .15s, filter .1s;
 }
-.btn:active { transform: scale(.97); }
+.btn:active { filter: brightness(.88); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 .btn.primary { background: linear-gradient(180deg, #f2d27f, var(--gold2)); color: #251800; border: 0; }
 .btn.wine { background: linear-gradient(180deg, #c42566, var(--wine2)); border: 0; }
@@ -124,8 +128,8 @@ main { max-width: 680px; margin: 0 auto; padding: 16px; }
 /* Selección de jugador */
 .pick-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 @media (min-width: 520px) { .pick-grid { grid-template-columns: repeat(4, 1fr); } }
-.pick { position: relative; background: rgba(0,0,0,.25); border: 1px solid var(--card-b); border-radius: 14px; padding: 8px 4px 6px; cursor: pointer; text-align: center; transition: transform .1s, border-color .2s; }
-.pick:active { transform: scale(.96); }
+.pick { position: relative; background: rgba(0,0,0,.25); border: 1px solid var(--card-b); border-radius: 14px; padding: 8px 4px 6px; cursor: pointer; text-align: center; transition: border-color .15s; }
+.pick:active { filter: brightness(.85); }
 .pick:hover { border-color: var(--gold); }
 .pick.taken { cursor: not-allowed; opacity: .4; filter: grayscale(.8); }
 .pick .lock { position: absolute; top: 6px; right: 6px; font-size: 11px; background: rgba(0,0,0,.7); padding: 2px 6px; border-radius: 99px; }
@@ -149,7 +153,7 @@ table.clas tr.me td { background: rgba(226,189,98,.14); color: var(--gold); font
 label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; font-weight: 600; }
 input, select, textarea {
   width: 100%; padding: 11px 12px; border-radius: 10px; border: 1px solid var(--card-b);
-  background: rgba(0,0,0,.35); color: var(--text); font: 15px Inter, sans-serif;
+  background: rgba(0,0,0,.35); color: var(--text); font: 16px Inter, sans-serif;
 }
 input[type=checkbox] { width: auto; }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -270,3 +274,10 @@ textarea { resize: vertical; }
 .fxb.open { background: rgba(60,207,122,.22); color: var(--ok); }
 .fxb.done { background: rgba(226,189,98,.2); color: var(--gold); }
 .fxb.off { background: rgba(255,93,108,.18); color: var(--ko); }
+
+/* Interfaz más estable */
+.tabs button { transition: color .15s; }
+dialog[open] { animation: fadeIn .14s ease-out; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.re-head select, .stepper input { font-size: 16px; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
