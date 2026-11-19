@@ -26,7 +26,7 @@ const db = getFirestore(fb);
 const S = {
   uid: null, me: null, players: new Map(), matches: [], trainings: [],
   cfg: { pollWeekday: 3, pollHour: 20, trainingTime: "20:00", trainingOpenHour: 10, trainingPlace: "", trainingAuto: true },
-  clas: null, ratings: new Map(), tab: "partidos", adminTab: "partidos", unsub: [], swReg: null,
+  clas: null, ratings: new Map(), myKeys: {}, preds: new Map(), tab: "partidos", adminTab: "partidos", unsub: [], swReg: null,
 };
 
 // ---------- utilidades ----------
@@ -205,23 +205,36 @@ function startMain() {
   }));
   S.unsub.push(onSnapshot(doc(db, "config", "app"), (s) => { if (s.exists()) Object.assign(S.cfg, s.data()); render(); }));
   S.unsub.push(onSnapshot(doc(db, "config", "clasificacion"), (s) => { S.clas = s.exists() ? s.data() : null; render(); }));
-  // Valoraciones de todos los partidos: matches/{partido}/ratings/{quién valora}
+  // Valoraciones ANÓNIMAS: matches/{partido}/ratings/{código aleatorio}. Solo mi móvil sabe cuál es mi código
+  // (users/{uid}.ratingKeys, que solo puede leer el propio usuario).
+  S.unsub.push(onSnapshot(doc(db, "users", S.uid), (s) => { S.myKeys = s.data()?.ratingKeys || {}; if (!$modal.open) render(); }));
   S.unsub.push(onSnapshot(collectionGroup(db, "ratings"), (snap) => {
     const map = new Map();
     for (const d of snap.docs) {
       const mid = d.ref.parent.parent.id;
       if (!map.has(mid)) map.set(mid, []);
-      map.get(mid).push({ rater: d.id, ...d.data() });
+      map.get(mid).push({ key: d.id, ...d.data() });
     }
     S.ratings = map;
     if (!$modal.open) render(); else refreshMatchModal();
   }, (e) => console.warn("valoraciones:", e.message)));
+  // Fantasy: matches/{partido}/predictions/{jugador}
+  S.unsub.push(onSnapshot(collectionGroup(db, "predictions"), (snap) => {
+    const map = new Map();
+    for (const d of snap.docs) {
+      const mid = d.ref.parent.parent.id;
+      if (!map.has(mid)) map.set(mid, new Map());
+      map.get(mid).set(d.id, d.data());
+    }
+    S.preds = map;
+    if (!$modal.open) render();
+  }, (e) => console.warn("fantasy:", e.message)));
   setupForegroundPush();
   clearInterval(S._tick); S._tick = setInterval(() => { if (!$modal.open && !["admin"].includes(S.tab)) render(); }, 30000);
 }
 
 function renderTabs() {
-  const tabs = [["partidos", "⚽", "Partidos"], ["entrenos", "🏃", "Entrenos"], ["clasif", "🏆", "Clasificación"], ["perfil", "👕", "Perfil"]];
+  const tabs = [["partidos", "⚽", "Partidos"], ["entrenos", "🏃", "Entrenos"], ["fantasy", "🎯", "Fantasy"], ["clasif", "🏆", "Clasif."], ["perfil", "👕", "Perfil"]];
   if (isAdmin()) tabs.push(["admin", "🛠️", "Admin"]);
   $tabs.classList.remove("hidden");
   $tabs.innerHTML = tabs.map(([k, ic, l]) => `<button class="${S.tab === k ? "on" : ""}" data-act="tab" data-tab="${k}"><span class="ic">${ic}</span>${l}</button>`).join("");
@@ -232,7 +245,7 @@ function render() {
   if (S.tab === "admin" && !isAdmin()) S.tab = "partidos";
   renderTabs();
   const scroll = window.scrollY;
-  const views = { partidos: viewMatches, entrenos: viewTrainings, clasif: viewClas, perfil: viewProfile, admin: viewAdmin };
+  const views = { partidos: viewMatches, entrenos: viewTrainings, fantasy: viewFantasy, clasif: viewClas, perfil: viewProfile, admin: viewAdmin };
   $app.innerHTML = views[S.tab]();
   window.scrollTo(0, scroll);
 }
@@ -355,9 +368,11 @@ function goalsForm(mid) {
     <h3>📝 Resultado · ${m.isHome !== false ? "vs" : "@"} ${esc(m.rival)}</h3>
     <div class="row2"><div><label>Goles Game Over</label><input type="number" min="0" name="golesGO" value="${esc(m.golesGO ?? "")}"></div>
       <div><label>Goles ${esc(m.rival)}</label><input type="number" min="0" name="golesRival" value="${esc(m.golesRival ?? "")}"></div></div>
+    ${lineupInputs(m)}
     ${scorersInputs(m)}
     <div class="acts"><button type="button" class="btn" data-act="close">Cancelar</button><button class="btn primary" type="submit">Guardar</button></div>
   </form>`);
+  drawCourt();
   updateGoalSum();
 }
 function updateGoalSum() {
@@ -376,9 +391,9 @@ async function saveGoals(form) {
   const f = Object.fromEntries(new FormData(form));
   await updateDoc(doc(db, "matches", form.dataset.id), {
     golesGO: f.golesGO === "" ? null : +f.golesGO, golesRival: f.golesRival === "" ? null : +f.golesRival,
-    goals: readGoals(form), updatedAt: serverTimestamp(),
+    goals: readGoals(form), lineup: readLineup(), votes: readAttendance(form, S.matches.find((x) => x.id === form.dataset.id)), updatedAt: serverTimestamp(),
   });
-  toast("Resultado y goleadores guardados ⚽");
+  toast("Resultado, asistentes, alineación y goleadores guardados ⚽");
 }
 
 function nextMatch() {
@@ -402,6 +417,7 @@ function matchCard(m, hero) {
       <div class="team ${m.isHome === false ? "go" : ""}">${crestImg(ca, "lg")}${esc(a)}</div>
     </div>
     ${scorersLine(m)}
+    ${cardsLine(m)}
     <div class="when">
       ${d ? `<div class="big">${cap(fmtDay(d))}</div>${m.timeKnown ? `<div>🕘 ${fmtTime(d)} h</div>` : `<div class="muted">Hora pendiente de publicar</div>`}` : `<div class="muted">Fecha por confirmar</div>`}
       ${m.venue ? `<div class="muted small">📍 ${esc(m.venue)}</div>` : ""}
@@ -416,9 +432,9 @@ function viewMatches() {
   const played = S.matches.filter(resultOf);
   const W = played.filter((m) => resultOf(m) === "W").length, D = played.filter((m) => resultOf(m) === "D").length, L = played.length - W - D;
   const lp = lastPlayed();
-  const lpRated = lp && (S.ratings.get(lp.id) || []).some((x) => x.rater === S.me);
+  const lpRated = lp && !!myRating(lp.id);
   return `${notifBanner()}
-    ${lp && !lpRated ? `<div class="banner">⭐ ¿Qué tal fue contra ${esc(lp.rival)}? Valora a tus compañeros.<button class="btn sm primary" data-act="rate" data-id="${lp.id}">Valorar</button></div>` : ""}
+    ${lp && !lpRated && wentTo(lp, S.me) ? `<div class="banner">⭐ ¿Qué tal fue contra ${esc(lp.rival)}? Valora a tus compañeros.<button class="btn sm primary" data-act="rate" data-id="${lp.id}">Valorar</button></div>` : ""}
     ${nx ? matchCard(nx, true) : `<div class="card empty">No hay partidos pendientes ahora mismo.</div>`}
     <div class="section-title"><h2>Temporada 26/27</h2><span class="muted small">${W}V · ${D}E · ${L}D</span></div>
     <div class="card" style="padding:4px 12px">
@@ -476,7 +492,9 @@ function parseStandings(text) {
   return out;
 }
 function viewClas() {
-  const toggle = `<div class="subtabs" style="margin-top:4px"><button class="btn sm ${S.clasTab !== "goles" ? "on" : ""}" data-act="ctab" data-tab="liga">🏆 Liga</button><button class="btn sm ${S.clasTab === "goles" ? "on" : ""}" data-act="ctab" data-tab="goles">⚽ Goleadores</button></div>`;
+  const ct = S.clasTab || "liga";
+  const toggle = `<div class="subtabs" style="margin-top:4px">${[["liga", "🏆 Liga"], ["goles", "⚽ Goleadores"], ["tarjetas", "🟨 Tarjetas"]].map(([k, l]) => `<button class="btn sm ${ct === k ? "on" : ""}" data-act="ctab" data-tab="${k}">${l}</button>`).join("")}</div>`;
+  if (ct === "tarjetas") return `<div class="section-title"><h2>Tarjetas</h2><span class="muted small">Game Over FC 26/27</span></div>${toggle}${viewCards()}`;
   if (S.clasTab === "goles") return `<div class="section-title"><h2>Goleadores</h2><span class="muted small">Game Over FC 26/27</span></div>${toggle}${viewScorers()}`;
   return toggle.replace('style="margin-top:4px"', 'style="margin-top:16px"') + viewClasLiga();
 }
@@ -504,7 +522,8 @@ function viewClasLiga() {
     ${link}`;
 }
 
-// ----- valoraciones -----
+// ----- valoraciones (anónimas) -----
+const myRating = (mid) => S.myKeys[mid] && (S.ratings.get(mid) || []).find((x) => x.key === S.myKeys[mid]);
 const fmtAvg = (x) => x == null ? "–" : x.toFixed(1).replace(".", ",");
 const matchStarted = (m) => !!resultOf(m) || (toDate(m.date) && toDate(m.date).getTime() <= Date.now());
 // Medias de un partido: { playerId: { avg, n, comments: [{ by, text }] } }
@@ -517,7 +536,7 @@ function matchRatings(mid) {
     }
     for (const [pid, t] of Object.entries(r.comments || {})) {
       if (!String(t).trim()) continue;
-      (out[pid] ||= { sum: 0, n: 0, comments: [] }); out[pid].comments.push({ by: r.rater, text: t, score: r.scores?.[pid] });
+      (out[pid] ||= { sum: 0, n: 0, comments: [] }); out[pid].comments.push({ text: t, score: r.scores?.[pid] });
     }
   }
   for (const k in out) out[k].avg = out[k].n ? out[k].sum / out[k].n : null;
@@ -538,42 +557,43 @@ function seasonRatings() {
   return out;
 }
 // Jugadores a valorar: los que dijeron "Voy" (si nadie votó, toda la plantilla)
-function ratablePlayers(m, all = false) {
-  const list = sortedPlayers().filter((p) => p.position !== "Entrenador" && p.id !== S.me);
-  const yes = list.filter((p) => m.votes?.[p.id] === "si");
-  return all || !yes.length ? list : yes;
+// Solo valoran los que fueron al partido y solo se valora a los que jugaron (fueron)
+const wentTo = (m, pid) => m.votes?.[pid] === "si";
+function ratablePlayers(m) {
+  return sortedPlayers().filter((p) => p.position !== "Entrenador" && p.id !== S.me && wentTo(m, p.id));
 }
 const pname = (id) => S.players.get(id)?.name || "Ex-jugador";
 
 function ratingsBlock(m) {
   if (!matchStarted(m)) return "";
   const r = matchRatings(m.id);
-  const mine = (S.ratings.get(m.id) || []).find((x) => x.rater === S.me);
+  const mine = myRating(m.id);
   const rated = Object.entries(r).filter(([, v]) => v.n || v.comments.length)
     .sort((a, b) => (b[1].avg ?? 0) - (a[1].avg ?? 0));
   const raters = (S.ratings.get(m.id) || []).length;
   return `<div class="ratings">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
       <div class="bebas" style="font-size:22px">⭐ Valoraciones</div>
-      <button class="btn sm ${mine ? "" : "primary"}" data-act="rate" data-id="${m.id}">${mine ? "✏️ Editar mis notas" : "⭐ Valorar"}</button>
+      ${wentTo(m, S.me) ? `<button class="btn sm ${mine ? "" : "primary"}" data-act="rate" data-id="${m.id}">${mine ? "✏️ Editar mis notas" : "⭐ Valorar"}</button>` : `<span class="muted small">Solo valoran los que fueron</span>`}
     </div>
     <p class="muted small" style="margin:4px 0 8px">${raters ? `${raters} ${raters === 1 ? "persona ha" : "personas han"} valorado` : "Nadie ha valorado todavía. ¡Sé el primero!"}</p>
     ${rated.map(([pid, v], i) => `<details class="rate-row">
       <summary><span class="rk">${i === 0 && v.avg ? "🏅" : i + 1}</span><span class="nm">${esc(pname(pid))}${pid === S.me ? " (tú)" : ""}</span>
         <span class="muted small">${v.n} ${v.n === 1 ? "nota" : "notas"}${v.comments.length ? ` · 💬 ${v.comments.length}` : ""}</span>
         <span class="avg ${v.avg >= 7 ? "hi" : v.avg && v.avg < 5 ? "lo" : ""}">${fmtAvg(v.avg)}</span></summary>
-      ${v.comments.length ? v.comments.map((c) => `<div class="cmt"><b>${esc(pname(c.by))}</b>${c.score ? ` <span class="muted">(${c.score})</span>` : ""}: ${esc(c.text)}</div>`).join("") : `<div class="cmt muted">Sin comentarios</div>`}
+      ${v.comments.length ? v.comments.map((c) => `<div class="cmt"><b>🕶️ Anónimo</b>${c.score ? ` <span class="muted">(${c.score})</span>` : ""}: ${esc(c.text)}</div>`).join("") : `<div class="cmt muted">Sin comentarios</div>`}
     </details>`).join("")}
   </div>`;
 }
 
 function rateForm(mid, all = false) {
   const m = S.matches.find((x) => x.id === mid);
-  const mine = (S.ratings.get(mid) || []).find((x) => x.rater === S.me) || {};
-  const list = ratablePlayers(m, all);
+  const mine = myRating(mid) || {};
+  if (!wentTo(m, S.me)) return toast("Solo pueden valorar los que fueron al partido");
+  const list = ratablePlayers(m);
   openModal(`<form data-form="rate" data-id="${mid}">
     <h3>⭐ Valorar · ${m.isHome !== false ? "vs" : "@"} ${esc(m.rival)}</h3>
-    <p class="muted small">Pon nota del 1 al 10 a cada compañero (deja “–” si no quieres valorarlo) y, si quieres, un comentario. Puedes cambiarlo cuando quieras.</p>
+    <p class="muted small">Pon nota del 1 al 10 a cada compañero (deja “–” si no quieres valorarlo) y, si quieres, un comentario. <b>🕶️ Es anónimo:</b> nadie verá quién ha puesto cada nota. Puedes cambiarlo cuando quieras.</p>
     ${list.map((p) => {
       const v = mine.scores?.[p.id] ?? "";
       return `<div class="rate-edit">
@@ -582,7 +602,7 @@ function rateForm(mid, all = false) {
         <input name="c_${p.id}" maxlength="200" placeholder="Comentario (opcional)" value="${esc(mine.comments?.[p.id] || "")}">
       </div>`;
     }).join("")}
-    ${!all && ratablePlayers(m).length < ratablePlayers(m, true).length ? `<button type="button" class="btn sm ghost" data-act="rate-all" data-id="${mid}">Mostrar toda la plantilla</button>` : ""}
+    ${list.length ? "" : `<p class="muted">No hay más compañeros marcados como asistentes en este partido.</p>`}
     <div class="acts"><button type="button" class="btn" data-act="close">Cancelar</button><button class="btn primary" type="submit">Guardar notas</button></div>
   </form>`);
 }
@@ -595,12 +615,25 @@ async function saveRatings(form) {
     if (k.startsWith("c_") && v.trim()) comments[k.slice(2)] = v.trim().slice(0, 200);
   }
   // conservar notas de jugadores que no aparecían en el formulario
-  const prev = (S.ratings.get(form.dataset.id) || []).find((x) => x.rater === S.me) || {};
+  const mid = form.dataset.id;
+  const prev = myRating(mid) || {};
   const shown = new Set([...f.keys()].map((k) => k.slice(2)));
   for (const [pid, v] of Object.entries(prev.scores || {})) if (!shown.has(pid)) scores[pid] = v;
   for (const [pid, v] of Object.entries(prev.comments || {})) if (!shown.has(pid)) comments[pid] = v;
-  await setDoc(doc(db, "matches", form.dataset.id, "ratings", S.me), { scores, comments, updatedAt: serverTimestamp() });
-  toast("¡Notas guardadas! ⭐");
+  const data = { scores, comments, updatedAt: serverTimestamp() };
+  const key = S.myKeys[mid];
+  if (key) {
+    await setDoc(doc(db, "matches", mid, "ratings", key), data);
+  } else {
+    // primera vez: código aleatorio + guardarlo en mi apartado privado, en la misma operación
+    const ref = doc(collection(db, "matches", mid, "ratings"));
+    const b = writeBatch(db);
+    b.set(ref, data);
+    b.set(doc(db, "users", S.uid), { ratingKeys: { [mid]: ref.id } }, { merge: true });
+    await b.commit();
+    S.myKeys = { ...S.myKeys, [mid]: ref.id };
+  }
+  toast("¡Notas guardadas! Son anónimas 🕶️");
 }
 
 function openMatchModal(id) {
@@ -609,7 +642,7 @@ function openMatchModal(id) {
   S.openMatch = id;
   openModal(`${matchCard(m, false).replace('class="card ', 'class="card-plain ')}
     ${ratingsBlock(m)}
-    <div class="acts"><button class="btn" data-act="close">Cerrar</button>${isAdmin() ? `${matchStarted(m) ? `<button class="btn wine" data-act="goals" data-id="${id}">📝 Resultado y goleadores</button>` : ""}<button class="btn primary" data-act="match-edit" data-id="${id}">Editar</button>` : ""}</div>`);
+    <div class="acts"><button class="btn" data-act="close">Cerrar</button>${isAdmin() ? `${matchStarted(m) ? `<button class="btn wine" data-act="goals" data-id="${id}">📝 Resultado</button><button class="btn" data-act="cards" data-id="${id}">🟨🟥</button>` : ""}<button class="btn primary" data-act="match-edit" data-id="${id}">Editar</button>` : ""}</div>`);
 }
 function refreshMatchModal() {
   if ($modal.open && S.openMatch && $modal.querySelector(".ratings")) {
@@ -622,6 +655,247 @@ function refreshMatchModal() {
 function lastPlayed() {
   const past = S.matches.filter((m) => matchStarted(m) && toDate(m.date) && Date.now() - toDate(m.date) < 10 * 864e5);
   return past[past.length - 1];
+}
+
+// =====================================================================
+//  FANTASY: predicciones de portero, cuarteto inicial y goleadores
+// =====================================================================
+const PTS = { scorer: 3, starter: 1, gk: 1 };
+const fieldPlayers = () => sortedPlayers().filter((p) => p.position !== "Entrenador");
+// Abierto hasta que empieza el partido (si no hay hora, hasta el final del día del partido)
+function predOpen(m) {
+  if (resultOf(m)) return false;
+  const d = toDate(m.date);
+  if (!d) return true;
+  return Date.now() < (m.timeKnown ? d.getTime() : d.getTime() + 864e5);
+}
+function predDeadlineText(m) {
+  const d = toDate(m.date);
+  if (!d) return "Se cierra al empezar el partido";
+  return m.timeKnown ? `Se cierra al empezar: ${fmtDay(d)} a las ${fmtTime(d)}` : `Se cierra al empezar el partido (${fmtDay(d)})`;
+}
+// Puntos de una predicción en un partido ya terminado
+function predPoints(m, pr) {
+  if (!pr || !resultOf(m)) return null;
+  const scored = new Set(goalsOf(m).map(([pid]) => pid));
+  const lu = m.lineup || {};
+  const st = new Set(lu.starters || []);
+  const hitsScorers = (pr.scorers || []).filter((x) => scored.has(x));
+  const hitsStarters = lu.starters?.length ? (pr.starters || []).filter((x) => st.has(x)) : [];
+  const hitGk = !!(lu.gk && pr.gk && pr.gk === lu.gk);
+  return {
+    total: hitsScorers.length * PTS.scorer + hitsStarters.length * PTS.starter + (hitGk ? PTS.gk : 0),
+    hitsScorers, hitsStarters, hitGk, lineupSet: !!lu.starters?.length,
+  };
+}
+function fantasyTable() {
+  const out = {};
+  for (const m of S.matches) {
+    if (!resultOf(m)) continue;
+    for (const [pid, pr] of S.preds.get(m.id) || []) {
+      const r = predPoints(m, pr); if (!r) continue;
+      (out[pid] ||= { pts: 0, n: 0, sc: 0 }); out[pid].pts += r.total; out[pid].n++; out[pid].sc += r.hitsScorers.length;
+    }
+  }
+  return Object.entries(out).filter(([pid]) => S.players.has(pid)).sort((a, b) => b[1].pts - a[1].pts || b[1].sc - a[1].sc);
+}
+const chipNames = (ids, hits) => (ids || []).map((id) => `<span class="chip-s ${hits ? (hits.includes(id) ? "ok" : "ko") : ""}">${esc(pname(id))}</span>`).join("") || `<span class="muted small">—</span>`;
+
+function viewFantasy() {
+  const nx = S.matches.find((m) => predOpen(m) && toDate(m.date)) || null;
+  const t = fantasyTable();
+  const played = S.matches.filter((m) => resultOf(m) && S.preds.get(m.id)?.size).reverse();
+  let next = `<div class="card empty">No hay ningún partido abierto para predecir ahora mismo.</div>`;
+  if (nx) {
+    const mine = S.preds.get(nx.id)?.get(S.me);
+    const n = S.preds.get(nx.id)?.size || 0;
+    const [ch, ca] = crests(nx); const [h, a] = teams(nx);
+    next = `<div class="card hero">
+      <span class="tag gold">PREDICCIÓN · PRÓXIMO PARTIDO</span>
+      <div class="vs"><div class="team ${nx.isHome !== false ? "go" : ""}">${crestImg(ch, "lg")}${esc(h)}</div><div class="score">vs</div><div class="team ${nx.isHome === false ? "go" : ""}">${crestImg(ca, "lg")}${esc(a)}</div></div>
+      <p class="countdown">⏳ ${predDeadlineText(nx)} · ${n} ${n === 1 ? "predicción" : "predicciones"}</p>
+      ${mine ? `<div class="pred-sum">
+          <div><b>🧤 Portero</b>${chipNames([mine.gk].filter(Boolean))}</div>
+          <div><b>👟 Cuarteto inicial</b>${chipNames(mine.starters)}</div>
+          <div><b>⚽ Goleadores</b>${chipNames(mine.scorers)}</div>
+        </div>` : `<p class="muted small" style="text-align:center">Aún no has hecho tu predicción.</p>`}
+      <button class="btn ${mine ? "" : "primary"} block" data-act="predict" data-id="${nx.id}">${mine ? "✏️ Cambiar mi predicción" : "🎯 Hacer mi predicción"}</button>
+    </div>`;
+  }
+  return `<div class="section-title"><h2>🎯 Fantasy</h2></div>
+    ${next}
+    <details class="card rules"><summary><b>📋 Cómo se puntúa</b></summary>
+      <p class="small">Antes de cada partido predice el <b>portero</b>, el <b>cuarteto inicial</b> (los 4 de campo) y <b>quién marcará</b>. Al terminar, el admin pone la alineación y los goleadores reales:</p>
+      <ul class="small"><li>⚽ <b>+${PTS.scorer}</b> por cada goleador acertado (con que marque uno, cuenta)</li><li>👟 <b>+${PTS.starter}</b> por cada jugador del cuarteto inicial acertado</li><li>🧤 <b>+${PTS.gk}</b> si aciertas el portero</li></ul>
+      <p class="small muted">Las predicciones de los demás se ven cuando empieza el partido.</p>
+    </details>
+    <div class="section-title"><h3>🏆 Clasificación Fantasy</h3></div>
+    <div class="card" style="padding:4px 12px">${t.length ? t.map(([pid, v], i) => `<div class="rate-row flat ${pid === S.me ? "meRow" : ""}" data-act="player" data-id="${pid}">
+        <span class="rk">${["🥇", "🥈", "🥉"][i] || i + 1}</span><span class="nm">${esc(pname(pid))}</span>
+        <span class="muted small">${v.n} ${v.n === 1 ? "partido" : "partidos"}</span><span class="avg hi">${v.pts}</span></div>`).join("")
+      : `<div class="empty">Todavía no hay puntos. ¡Haz tu predicción para el próximo partido!</div>`}</div>
+    ${played.length ? `<div class="section-title"><h3>Jornadas</h3></div>${played.map((m) => {
+      const r = predPoints(m, S.preds.get(m.id).get(S.me));
+      return `<div class="card match-row" style="grid-template-columns:36px 1fr auto" data-act="fx" data-id="${m.id}">
+        ${crestImg(m.crest)}<div class="t">${m.isHome !== false ? "vs" : "@"} ${esc(m.rival)}<small>${m.golesGO}-${m.golesRival} · ${S.preds.get(m.id).size} predicciones${m.lineup?.starters?.length ? "" : " · falta la alineación"}</small></div>
+        <div class="res ${r ? "W" : ""}">${r ? `+${r.total}` : "—"}</div></div>`;
+    }).join("")}` : ""}`;
+}
+
+// Detalle de un partido: alineación real y puntos de cada uno
+function fantasyMatchModal(mid) {
+  const m = S.matches.find((x) => x.id === mid);
+  const lu = m.lineup || {};
+  const scorers = goalsOf(m).map(([pid]) => pid);
+  const rows = [...(S.preds.get(mid) || [])].map(([pid, pr]) => [pid, pr, predPoints(m, pr)])
+    .sort((a, b) => (b[2]?.total ?? -1) - (a[2]?.total ?? -1));
+  openModal(`<h3>🎯 ${m.isHome !== false ? "vs" : "@"} ${esc(m.rival)} · ${m.golesGO ?? "?"}-${m.golesRival ?? "?"}</h3>
+    <div class="pred-sum">
+      <div><b>🧤 Portero real</b>${chipNames([lu.gk].filter(Boolean))}</div>
+      <div><b>👟 Cuarteto real</b>${chipNames(lu.starters)}</div>
+      <div><b>⚽ Goleadores</b>${chipNames(scorers)}</div>
+    </div>
+    ${rows.map(([pid, pr, r]) => `<details class="rate-row"><summary><span class="rk">${pid === S.me ? "⭐" : ""}</span><span class="nm">${esc(pname(pid))}</span><span></span><span class="avg hi">${r ? `+${r.total}` : "—"}</span></summary>
+      <div class="pred-sum small">
+        <div><b>🧤</b>${chipNames([pr.gk].filter(Boolean), r?.hitGk ? [pr.gk] : [])}</div>
+        <div><b>👟</b>${chipNames(pr.starters, r?.hitsStarters || [])}</div>
+        <div><b>⚽</b>${chipNames(pr.scorers, r?.hitsScorers || [])}</div>
+      </div></details>`).join("") || `<p class="muted">Nadie hizo predicción.</p>`}
+    <div class="acts">${isAdmin() ? `<button class="btn wine" data-act="goals" data-id="${mid}">📝 Resultado y alineación</button>` : ""}<button class="btn primary" data-act="close">Cerrar</button></div>`);
+}
+
+// ----- Pista de fútbol sala: portero + rombo (cierre, alas, pívot) -----
+const POS = [
+  ["pivot", "Pívot", 50, 13], ["alaI", "Ala izq.", 17, 37], ["alaD", "Ala der.", 83, 37],
+  ["cierre", "Cierre", 50, 59], ["gk", "Portero", 50, 85],
+];
+function courtHtml() {
+  const c = S.court;
+  return `<div class="pitch">
+    <span class="pl-mid"></span><span class="pl-circle"></span><span class="pl-area top"></span><span class="pl-area bot"></span>
+    ${POS.map(([k, label, x, y]) => {
+      const p = S.players.get(c.pos[k]);
+      return `<button type="button" class="slot ${p ? "full" : ""}" style="left:${x}%;top:${y}%" data-act="slot" data-pos="${k}">
+        ${p ? jersey(p) : `<span class="slot-empty">+</span>`}<span class="slot-l">${p ? esc(p.name) : label}</span></button>`;
+    }).join("")}
+  </div>`;
+}
+function pickerHtml(pos) {
+  const label = POS.find((x) => x[0] === pos)[1];
+  return `<div class="picker"><div class="bebas" style="font-size:20px">Elige ${label.toLowerCase()}</div>
+    <div class="pick-grid">${fieldPlayers().map((p) => {
+      const where = Object.entries(S.court.pos).find(([, v]) => v === p.id)?.[0];
+      return `<div class="pick ${where === pos ? "sel" : ""}" data-act="slotpick" data-id="${p.id}">${jersey(p)}<div class="lbl">${esc(p.name)}${where && where !== pos ? ` · ${POS.find((x) => x[0] === where)[1]}` : ""}</div></div>`;
+    }).join("")}</div>
+    <div class="acts"><button type="button" class="btn" data-act="slotclear">Quitar</button><button type="button" class="btn primary" data-act="slotcancel">Volver</button></div></div>`;
+}
+const drawCourt = () => { const box = $modal.querySelector("#courtBox"); if (box) box.innerHTML = S.court.picking ? pickerHtml(S.court.picking) : courtHtml(); };
+function courtFrom(obj) {
+  const pos = { ...(obj?.pos || {}) };
+  if (obj?.gk) pos.gk = obj.gk;
+  // datos antiguos sin posiciones: repartir el cuarteto en el rombo
+  if (!obj?.pos && obj?.starters) ["cierre", "alaI", "alaD", "pivot"].forEach((k, i) => { if (obj.starters[i]) pos[k] = obj.starters[i]; });
+  return { pos, picking: null };
+}
+function courtValue() {
+  const p = S.court.pos;
+  const four = ["cierre", "alaI", "alaD", "pivot"];
+  return { gk: p.gk || null, starters: four.map((k) => p[k]).filter(Boolean), pos: Object.fromEntries(four.filter((k) => p[k]).map((k) => [k, p[k]])) };
+}
+
+// Formulario de predicción
+const chip = (name, id, checked, type = "checkbox") =>
+  `<label class="chip"><input type="${type}" name="${name}" value="${id}" ${checked ? "checked" : ""}><span>${esc(pname(id))}</span></label>`;
+function predictForm(mid) {
+  const m = S.matches.find((x) => x.id === mid);
+  if (!predOpen(m)) return toast("Las predicciones de este partido ya están cerradas");
+  const pr = S.preds.get(mid)?.get(S.me) || {};
+  S.court = courtFrom(pr);
+  openModal(`<form data-form="predict" data-id="${mid}">
+    <h3>🎯 Predicción · ${m.isHome !== false ? "vs" : "@"} ${esc(m.rival)}</h3>
+    <p class="muted small">${predDeadlineText(m)}. Toca cada posición y elige la camiseta. Si aciertas un titular cuenta aunque juegue en otra posición.</p>
+    <div id="courtBox"></div>
+    <div class="bebas fx-h">⚽ ¿Quién marcará? <span class="muted small">(hasta 6 · +${PTS.scorer} por acierto)</span></div>
+    <div class="chips" data-max="6">${fieldPlayers().map((p) => chip("sc", p.id, pr.scorers?.includes(p.id))).join("")}</div>
+    <div class="acts"><button type="button" class="btn" data-act="close">Cancelar</button><button class="btn primary" type="submit">Guardar predicción</button></div>
+  </form>`);
+  drawCourt();
+}
+async function savePrediction(form) {
+  const v = courtValue();
+  if (!v.gk) throw new Error("Elige el portero");
+  if (v.starters.length !== 4) throw new Error("Rellena las 4 posiciones del rombo (cierre, alas y pívot)");
+  const scorers = new FormData(form).getAll("sc");
+  await setDoc(doc(db, "matches", form.dataset.id, "predictions", S.me), { ...v, scorers, updatedAt: serverTimestamp() });
+  toast("¡Predicción guardada! 🎯");
+}
+// Alineación real (admin, en el formulario de resultado): asistentes + pista
+function lineupInputs(m) {
+  S.court = courtFrom(m.lineup);
+  return `<div class="bebas fx-h">✅ ¿Quién fue al partido? <span class="muted small">(pueden valorar y ser valorados)</span></div>
+    <div class="chips">${fieldPlayers().map((p) => chip("att", p.id, wentTo(m, p.id))).join("")}</div>
+    <div class="bebas fx-h">🏟️ Quinteto inicial</div>
+    <div id="courtBox"></div>`;
+}
+function readLineup() { return courtValue(); }
+function readAttendance(form, m) {
+  const went = new Set(new FormData(form).getAll("att"));
+  const votes = { ...(m.votes || {}) };
+  for (const p of fieldPlayers()) {
+    if (went.has(p.id)) votes[p.id] = "si";
+    else if (votes[p.id] === "si") votes[p.id] = "no";
+  }
+  return votes;
+}
+
+// ----- tarjetas -----
+const cardsOf = (m) => Object.entries(m.cards || {}).filter(([, c]) => (c.y || 0) + (c.r || 0) > 0);
+function cardsLine(m) {
+  const c = cardsOf(m);
+  if (!c.length) return "";
+  return `<div class="scorers">${c.map(([pid, v]) => `${"🟨".repeat(v.y || 0)}${"🟥".repeat(v.r || 0)} ${esc(pname(pid))}`).join(" · ")}</div>`;
+}
+function cardsTable() {
+  const out = {};
+  for (const m of S.matches) for (const [pid, c] of cardsOf(m)) {
+    (out[pid] ||= { y: 0, r: 0 }); out[pid].y += c.y || 0; out[pid].r += c.r || 0;
+  }
+  for (const p of S.players.values()) {
+    const b = p.cardsBase || {};
+    if ((+b.y || 0) + (+b.r || 0) > 0) { (out[p.id] ||= { y: 0, r: 0 }); out[p.id].y += +b.y || 0; out[p.id].r += +b.r || 0; }
+  }
+  return Object.entries(out).filter(([pid]) => S.players.has(pid)).sort((a, b) => b[1].r - a[1].r || b[1].y - a[1].y);
+}
+function viewCards() {
+  const t = cardsTable();
+  if (!t.length) return `<div class="card empty">🟨 Ninguna tarjeta esta temporada. ¡Así da gusto!</div>`;
+  return `<div class="card" style="padding:4px 12px">
+    <div class="rate-row flat head"><span></span><span class="muted small">Jugador</span><span class="muted small">🟨</span><span class="muted small" style="text-align:center">🟥</span></div>
+    ${t.map(([pid, v], i) => `<div class="rate-row flat ${pid === S.me ? "meRow" : ""}" data-act="player" data-id="${pid}">
+      <span class="rk">${i + 1}</span><span class="nm">${esc(pname(pid))} <span class="muted small">#${esc(S.players.get(pid)?.number ?? "")}</span></span>
+      <span class="cardn y">${v.y}</span><span class="cardn r">${v.r}</span></div>`).join("")}</div>`;
+}
+function cardsForm(mid) {
+  const m = S.matches.find((x) => x.id === mid);
+  const list = fieldPlayers().sort((a, b) => wentTo(m, b.id) - wentTo(m, a.id));
+  const st = (name, v) => `<span class="stepper"><button type="button" class="btn sm" data-act="g-minus">−</button><input type="number" name="${name}" min="0" max="5" value="${v || 0}"><button type="button" class="btn sm" data-act="g-plus">+</button></span>`;
+  openModal(`<form data-form="cards" data-id="${mid}">
+    <h3>🟨🟥 Tarjetas · ${m.isHome !== false ? "vs" : "@"} ${esc(m.rival)}</h3>
+    <p class="muted small">Se actualiza al momento en el móvil de todos.</p>
+    ${list.map((p) => `<div class="goal-edit"><span><b>${esc(p.name)}</b> <span class="muted small">#${esc(p.number)}</span></span>
+      <span style="display:flex;gap:10px;align-items:center">🟨${st("y_" + p.id, m.cards?.[p.id]?.y)} 🟥${st("r_" + p.id, m.cards?.[p.id]?.r)}</span></div>`).join("")}
+    <div class="acts"><button type="button" class="btn" data-act="close">Cancelar</button><button class="btn primary" type="submit">Guardar</button></div>
+  </form>`);
+}
+async function saveCards(form) {
+  const cards = {};
+  for (const [k, v] of new FormData(form).entries()) {
+    const [t, ...rest] = k.split("_"); const pid = rest.join("_");
+    if (!["y", "r"].includes(t) || !(+v > 0)) continue;
+    (cards[pid] ||= { y: 0, r: 0 })[t] = Math.min(5, Math.floor(+v));
+  }
+  await updateDoc(doc(db, "matches", form.dataset.id), { cards, updatedAt: serverTimestamp() });
+  toast("Tarjetas guardadas 🟨");
 }
 
 // ----- perfil de un jugador (cualquiera) -----
@@ -647,6 +921,7 @@ function playerModal(pid) {
   openModal(`<div class="profile">${jersey(p)}
     <h2 style="margin-top:6px">${esc(p.fullName || p.name)}</h2>
     <div class="muted">${p.position === "Entrenador" ? "Entrenador" : "Dorsal " + esc(p.number)} · GAME OVER FC</div>
+    ${(() => { const c = cardsTable().find(([x]) => x === pid)?.[1]; return c ? `<div style="margin-top:6px">🟨 ${c.y} · 🟥 ${c.r}</div>` : ""; })()}
     ${p.position !== "Entrenador" ? `<div class="stats">
       <div class="stat"><div class="v">⚽ ${g.total}</div><div class="l">Goles</div></div>
       <div class="stat"><div class="v">⭐ ${fmtAvg(r?.avg)}</div><div class="l">Valoración</div></div>
@@ -669,7 +944,7 @@ function viewProfile() {
   const my = season[S.me];
   const ranking = Object.entries(season).filter(([pid]) => S.players.has(pid)).sort((a, b) => b[1].avg - a[1].avg);
   const myComments = S.matches.filter((m) => S.ratings.has(m.id)).reverse().flatMap((m) =>
-    (S.ratings.get(m.id) || []).filter((r) => r.comments?.[S.me]).map((r) => ({ m, by: r.rater, text: r.comments[S.me], score: r.scores?.[S.me] }))).slice(0, 15);
+    (S.ratings.get(m.id) || []).filter((r) => r.comments?.[S.me]).map((r) => ({ m, text: r.comments[S.me], score: r.scores?.[S.me] }))).slice(0, 15);
   return `${notifBanner()}
     <div class="card profile hero">
       ${jersey(p)}
@@ -684,7 +959,7 @@ function viewProfile() {
       ${p.position !== "Entrenador" ? `<div class="stat" style="margin-top:10px"><div class="v">⭐ ${fmtAvg(my?.avg)}</div><div class="l">Media de valoraciones${my ? ` · ${my.n} notas en ${my.matches.size} ${my.matches.size === 1 ? "partido" : "partidos"}` : ""}</div></div>` : ""}
     </div>
     ${p.position !== "Entrenador" ? `<div class="card"><h3>⚽ Mis goles</h3>${goalsListHtml(S.me)}</div>` : ""}
-    ${myComments.length ? `<div class="card"><h3>💬 Lo que dicen de ti</h3>${myComments.map((c) => `<div class="cmt"><b>${esc(pname(c.by))}</b>${c.score ? ` <span class="muted">(${c.score})</span>` : ""} · <span class="muted small">${c.m.isHome !== false ? "vs" : "@"} ${esc(c.m.rival)}</span><br>${esc(c.text)}</div>`).join("")}</div>` : ""}
+    ${myComments.length ? `<div class="card"><h3>💬 Lo que dicen de ti</h3>${myComments.map((c) => `<div class="cmt"><b>🕶️ Anónimo</b>${c.score ? ` <span class="muted">(${c.score})</span>` : ""} · <span class="muted small">${c.m.isHome !== false ? "vs" : "@"} ${esc(c.m.rival)}</span><br>${esc(c.text)}</div>`).join("")}</div>` : ""}
     <div class="card"><h3>🏆 Ranking de valoraciones</h3>
       ${ranking.length ? ranking.map(([pid, v], i) => `<div class="rate-row flat ${pid === S.me ? "meRow" : ""}" data-act="player" data-id="${pid}"><span class="rk">${["🥇", "🥈", "🥉"][i] || i + 1}</span><span class="nm">${esc(pname(pid))}</span><span class="muted small">${v.matches.size} ${v.matches.size === 1 ? "partido" : "partidos"}</span><span class="avg ${v.avg >= 7 ? "hi" : v.avg < 5 ? "lo" : ""}">${fmtAvg(v.avg)}</span></div>`).join("")
         : `<p class="muted small">Aún no hay valoraciones. Después de cada partido, valorad a los compañeros desde el partido.</p>`}
@@ -887,6 +1162,8 @@ function playerForm(p = {}) {
     <label>Nombre completo</label><input name="fullName" value="${esc(p.fullName || "")}">
     <label>Posición</label><select name="position">${["Jugador", "Portero", "Entrenador"].map((x) => `<option ${p.position === x ? "selected" : ""}>${x}</option>`).join("")}</select>
     <label>Goles anteriores sin partido asignado</label><input type="number" min="0" name="goalsBase" value="${esc(p.goalsBase || 0)}">
+    <div class="row2"><div><label>🟨 Amarillas anteriores</label><input type="number" min="0" name="cardsBaseY" value="${esc(p.cardsBase?.y || 0)}"></div>
+      <div><label>🟥 Rojas anteriores</label><input type="number" min="0" name="cardsBaseR" value="${esc(p.cardsBase?.r || 0)}"></div></div>
     <div class="acts">${p.id ? `<button type="button" class="btn" data-act="player-del" data-id="${p.id}">🗑️ Borrar</button>` : ""}
       <button type="button" class="btn" data-act="close">Cancelar</button><button class="btn primary" type="submit">Guardar</button></div>
   </form>`);
@@ -927,7 +1204,8 @@ async function saveTraining(form) {
 
 async function savePlayer(form) {
   const f = Object.fromEntries(new FormData(form));
-  const data = { name: f.name.trim().toUpperCase(), number: f.number.trim(), fullName: f.fullName.trim(), position: f.position, goalsBase: Math.max(0, +f.goalsBase || 0) };
+  const data = { name: f.name.trim().toUpperCase(), number: f.number.trim(), fullName: f.fullName.trim(), position: f.position, goalsBase: Math.max(0, +f.goalsBase || 0),
+    cardsBase: { y: Math.max(0, +f.cardsBaseY || 0), r: Math.max(0, +f.cardsBaseR || 0) } };
   if (form.dataset.id) await updateDoc(doc(db, "players", form.dataset.id), data);
   else await setDoc(doc(db, "players", `${slug(f.name)}-${slug(f.number)}`), { ...data, role: "player", uid: null, active: true });
   toast("Jugador guardado");
@@ -975,13 +1253,25 @@ document.addEventListener("click", async (e) => {
       case "close": S.openMatch = null; return $modal.close();
       case "rate": return rateForm(id);
       case "goals": return goalsForm(id);
+      case "predict": return predictForm(id);
+      case "cards": return cardsForm(id);
+      case "slot": S.court.picking = b.dataset.pos; return drawCourt();
+      case "slotcancel": S.court.picking = null; return drawCourt();
+      case "slotclear": delete S.court.pos[S.court.picking]; S.court.picking = null; return drawCourt();
+      case "slotpick": {
+        const c = S.court, prev = c.pos[c.picking];
+        const other = Object.entries(c.pos).find(([k, v]) => v === id && k !== c.picking)?.[0];
+        if (other) { if (prev) c.pos[other] = prev; else delete c.pos[other]; } // intercambiar posiciones
+        c.pos[c.picking] = id; c.picking = null;
+        return drawCourt();
+      }
+      case "fx": return fantasyMatchModal(id);
       case "player": return playerModal(id);
       case "g-plus": case "g-minus": {
         const inp = b.parentElement.querySelector("input");
-        inp.value = Math.max(0, Math.min(30, (+inp.value || 0) + (act === "g-plus" ? 1 : -1)));
+        inp.value = Math.max(0, Math.min(+inp.max || 30, (+inp.value || 0) + (act === "g-plus" ? 1 : -1)));
         return updateGoalSum();
       }
-      case "rate-all": return rateForm(id, true);
       case "match-edit": matchForm(S.matches.find((x) => x.id === id)); return updateGoalSum();
       case "date-edit": return dateForm(S.matches.find((x) => x.id === id));
       case "train-edit": {
@@ -1019,6 +1309,8 @@ document.addEventListener("submit", async (e) => {
     const kind = form.dataset.form;
     if (kind === "match") await saveMatch(form);
     if (kind === "date") await saveDate(form);
+    if (kind === "predict") await savePrediction(form);
+    if (kind === "cards") await saveCards(form);
     if (kind === "goals") { await saveGoals(form); openMatchModal(form.dataset.id); return; }
     if (kind === "rate") { await saveRatings(form); S.openMatch = form.dataset.id; openMatchModal(form.dataset.id); return; }
     if (kind === "standings") {
@@ -1043,4 +1335,10 @@ document.addEventListener("submit", async (e) => {
   } catch (err) { toast("Error: " + err.message); }
 });
 
+document.addEventListener("change", (e) => {
+  const box = e.target.closest?.(".chips[data-max]");
+  if (!box || e.target.type !== "checkbox" || !e.target.checked) return;
+  const max = +box.dataset.max;
+  if (box.querySelectorAll("input:checked").length > max) { e.target.checked = false; toast(`Máximo ${max}`); }
+});
 document.addEventListener("input", (e) => { if (e.target.name?.startsWith("g_") || e.target.name === "golesGO") updateGoalSum(); });

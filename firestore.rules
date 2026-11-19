@@ -39,10 +39,16 @@ service cloud.firestore {
     }
 
     match /users/{uid} {
-      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      // Solo el propio usuario puede leer su documento (contiene sus códigos de valoración anónima)
+      allow read: if signedIn() && request.auth.uid == uid;
       allow create: if signedIn() && request.auth.uid == uid
         && getAfter(/databases/$(database)/documents/players/$(request.resource.data.playerId)).data.uid == uid;
-      allow update: if false;
+      // Solo se pueden AÑADIR códigos de valoración (nunca cambiarlos ni borrarlos: una valoración por partido)
+      allow update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ratingKeys'])
+        && request.resource.data.ratingKeys is map
+        && request.resource.data.ratingKeys.diff(resource.data.get('ratingKeys', {})).changedKeys().size() == 0
+        && request.resource.data.ratingKeys.diff(resource.data.get('ratingKeys', {})).removedKeys().size() == 0;
       allow delete: if isAdmin();
     }
 
@@ -58,16 +64,44 @@ service cloud.firestore {
       allow update: if isAdmin() || onlyMyVote();
     }
 
-    // Valoraciones: cada jugador guarda SUS notas (no puede valorarse a sí mismo)
-    match /matches/{mid}/ratings/{rater} {
-      allow read: if signedIn();
-      allow create, update: if hasUser() && rater == myPlayer()
-        && exists(/databases/$(database)/documents/matches/$(mid))
+    // Valoraciones ANÓNIMAS: el documento tiene un código aleatorio; solo el usuario sabe cuál es el suyo
+    function myRatingKeys() { return get(userPath()).data.get('ratingKeys', {}); }
+    function validRating(mid) {
+      // solo pueden valorar los que fueron al partido (votaron "Voy" o el admin los marcó como asistentes)
+      return get(/databases/$(database)/documents/matches/$(mid)).data.get('votes', {}).get(myPlayer(), '') == 'si'
         && request.resource.data.keys().hasOnly(['scores', 'comments', 'updatedAt'])
         && request.resource.data.scores is map && request.resource.data.comments is map
         && request.resource.data.scores.size() <= 40 && request.resource.data.comments.size() <= 40
-        && !(rater in request.resource.data.scores) && !(rater in request.resource.data.comments);
-      allow delete: if isAdmin() || (hasUser() && rater == myPlayer());
+        && !(myPlayer() in request.resource.data.scores) && !(myPlayer() in request.resource.data.comments);
+    }
+    match /matches/{mid}/ratings/{key} {
+      allow read: if signedIn();
+      allow create: if hasUser() && validRating(mid)
+        && !(mid in myRatingKeys())
+        && getAfter(userPath()).data.ratingKeys[mid] == key;
+      allow update: if hasUser() && validRating(mid) && myRatingKeys().get(mid, '') == key;
+      allow delete: if isAdmin();
+    }
+    // Fantasy: cada jugador guarda SU predicción hasta que empieza el partido
+    function predOpen(mid) {
+      let m = get(/databases/$(database)/documents/matches/$(mid)).data;
+      return m.get('golesGO', null) == null && (
+        m.get('date', null) == null
+        || (m.get('timeKnown', false) == true && request.time < m.date)
+        || (m.get('timeKnown', false) != true && request.time < m.date + duration.value(1, 'd')));
+    }
+    match /matches/{mid}/predictions/{pid} {
+      allow read: if signedIn();
+      allow create, update: if hasUser() && pid == myPlayer() && predOpen(mid)
+        && request.resource.data.keys().hasOnly(['gk', 'starters', 'pos', 'scorers', 'updatedAt'])
+        && request.resource.data.gk is string
+        && request.resource.data.starters is list && request.resource.data.starters.size() <= 4
+        && request.resource.data.scorers is list && request.resource.data.scorers.size() <= 6
+        && request.resource.data.pos is map && request.resource.data.pos.size() <= 4;
+      allow delete: if isAdmin();
+    }
+    match /{path=**}/predictions/{pid} {
+      allow read: if signedIn();
     }
     match /{path=**}/ratings/{rater} {
       allow read: if signedIn();

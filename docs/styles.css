@@ -231,3 +231,38 @@ textarea { resize: vertical; }
 .stepper .btn { width: 34px; padding: 6px 0; font-size: 18px; line-height: 1; }
 
 [data-act="player"] { cursor: pointer; }
+
+/* Fantasy */
+.fx-h { font-size: 19px; margin: 14px 0 6px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip input { position: absolute; opacity: 0; pointer-events: none; }
+.chip span { display: inline-block; padding: 7px 11px; border-radius: 99px; border: 1px solid var(--card-b); background: rgba(255,255,255,.06); font-size: 13px; font-weight: 700; cursor: pointer; user-select: none; }
+.chip input:checked + span { background: var(--gold); color: #251800; border-color: var(--gold); }
+.chip input[type=radio]:checked + span { background: #4fc3f7; border-color: #4fc3f7; color: #00253a; }
+.pred-sum { display: grid; gap: 8px; margin: 10px 0 12px; }
+.pred-sum > div { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.pred-sum b { margin-right: 4px; font-size: 13px; }
+.chip-s { display: inline-block; padding: 3px 9px; border-radius: 99px; background: rgba(255,255,255,.09); font-size: 12px; font-weight: 700; }
+.chip-s.ok { background: rgba(60,207,122,.25); color: var(--ok); }
+.chip-s.ko { background: rgba(255,93,108,.15); color: var(--ko); text-decoration: line-through; }
+.rules summary { cursor: pointer; list-style: none; }
+.rules ul { padding-left: 18px; line-height: 1.7; }
+.tabs button { font-size: 10.5px; }
+
+/* Pista de fútbol sala (Fantasy) */
+.pitch { position: relative; width: 100%; max-width: 360px; aspect-ratio: 3 / 4; margin: 6px auto 4px; border-radius: 14px;
+  background: repeating-linear-gradient(0deg, #1f7a46 0 10%, #1b6f3f 10% 20%); border: 3px solid rgba(255,255,255,.75); overflow: hidden; box-shadow: inset 0 0 30px rgba(0,0,0,.35); }
+.pitch .pl-mid { position: absolute; left: 0; right: 0; top: 0; border-top: 2px solid rgba(255,255,255,.7); }
+.pitch .pl-circle { position: absolute; left: 50%; top: 0; width: 34%; aspect-ratio: 1; transform: translate(-50%, -50%); border: 2px solid rgba(255,255,255,.7); border-radius: 50%; }
+.pitch .pl-area { position: absolute; left: 50%; width: 56%; height: 16%; transform: translateX(-50%); border: 2px solid rgba(255,255,255,.7); }
+.pitch .pl-area.bot { bottom: -2px; border-radius: 50% 50% 0 0 / 100% 100% 0 0; border-bottom: 0; }
+.pitch .pl-area.top { display: none; }
+.slot { position: absolute; transform: translate(-50%, -50%); width: 22%; background: none; border: 0; padding: 0; cursor: pointer; color: #fff; display: flex; flex-direction: column; align-items: center; }
+.slot .jersey { width: 100%; filter: drop-shadow(0 4px 6px rgba(0,0,0,.5)); }
+.slot-empty { width: 64%; aspect-ratio: 1; border-radius: 50%; border: 2px dashed rgba(255,255,255,.85); display: grid; place-items: center; font-size: 26px; background: rgba(0,0,0,.18); }
+.slot-l { margin-top: 2px; font: 700 11px Inter, sans-serif; background: rgba(0,0,0,.55); padding: 2px 7px; border-radius: 99px; white-space: nowrap; }
+.picker .pick.sel { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold) inset; }
+.cardn { text-align: center; font-family: "Bebas Neue", sans-serif; font-size: 22px; border-radius: 6px; min-width: 34px; }
+.cardn.y { background: rgba(240,195,73,.25); color: #ffd84d; }
+.cardn.r { background: rgba(255,93,108,.22); color: var(--ko); }
+.rate-row.head { cursor: default; padding-bottom: 2px; }
