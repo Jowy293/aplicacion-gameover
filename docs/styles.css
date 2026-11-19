@@ -266,3 +266,7 @@ textarea { resize: vertical; }
 .cardn.y { background: rgba(240,195,73,.25); color: #ffd84d; }
 .cardn.r { background: rgba(255,93,108,.22); color: var(--ko); }
 .rate-row.head { cursor: default; padding-bottom: 2px; }
+.fxb { font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 99px; background: rgba(255,255,255,.1); white-space: nowrap; }
+.fxb.open { background: rgba(60,207,122,.22); color: var(--ok); }
+.fxb.done { background: rgba(226,189,98,.2); color: var(--gold); }
+.fxb.off { background: rgba(255,93,108,.18); color: var(--ko); }

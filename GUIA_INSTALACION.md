@@ -52,21 +52,42 @@ Enlace: **https://jowy293.github.io/aplicacion-gameover/**
 
 | Cuándo | Qué pasa |
 |---|---|
-| **Cada hora** (los miércoles, cada 15 min) | Se leen de ligacomarcal.com los partidos, resultados y clasificación del GAME OVER FC. |
-| **En cuanto se publica la hora del partido** | Se abre la **votación de asistencia** dentro del partido y llega una **notificación a todos**: “⚽ ¡Partido publicado! …”. Si cambian la hora, llega otro aviso. |
-| **Votación del partido** | Se puede votar **Voy / No voy** (y cambiar el voto) **hasta el miércoles a las 20:00**. Después queda cerrada. Si el partido fuera antes, cierra al empezar el partido. |
-| **Martes ~10:00** | Se crea la **encuesta del entreno del miércoles** y llega un aviso. |
+| **Cuando el admin pone la hora del partido** | Se abre la **votación de asistencia** y llega una **notificación a todos** (en menos de 1 hora; los miércoles, 15 min). Si cambia la hora, llega otro aviso. |
+| **Votación del partido** | **Voy / No voy** hasta el **miércoles a las 20:00** de esa semana (si el partido es antes, hasta que empieza). |
+| **Martes 10:00** | Se abre la **encuesta del entreno del miércoles** (entreno a las 20:00), con aviso. Cierra el **miércoles a las 20:00**. |
+| **Fantasy** | Se abre solo para el próximo partido y se cierra al empezar. El admin puede abrirlo, cerrarlo o desactivarlo cuando quiera. |
+| **Después del partido** | El admin pone el resultado, quién fue, el quinteto inicial y los goleadores. Los puntos Fantasy, los goleadores y quién puede valorar se actualizan solos. |
 
-Todos ven quién va, quién no y quién no ha votado aún.
+> La web de la liga **bloquea las visitas automáticas**, así que los partidos, las horas y la clasificación los pone el admin desde la app.
 
-### Panel de administración (🛠️ Admin)
-- **Partidos**: añadir, editar o borrar partidos; poner hora, pabellón y resultado; cambiar el cierre de la votación. Si editas uno a mano deja marcado *“No sobrescribir con la web”*. Al poner la hora, la notificación sale sola en la siguiente pasada (como mucho 1 hora, 15 min los miércoles).
-- **Entrenos**: crear, editar o borrar encuestas de entreno (fecha, hora, lugar, nota, cierre).
-- **Jugadores y permisos**:
-  - Editar nombre, dorsal y nombre completo, y añadir o borrar jugadores.
-  - **Hacer admin / Quitar admin**: si Joan deja el equipo, que haga admin a otro y después se quite el permiso. Siempre tiene que quedar al menos un admin.
-  - **Liberar**: desvincula el móvil de un jugador para que pueda volver a elegirlo.
-- **Ajustes**: día y hora de cierre de la votación de partidos (por defecto miércoles 20:00), encuesta automática de los martes (sí/no), hora, lugar y cierre del entreno, y URL de la liga (para la temporada que viene).
+---
+
+## PARTE C2 · Manual del admin (todo se hace desde la app, pestaña 🛠️ Admin)
+
+### Antes del partido
+1. **Poner fecha y hora**: en la tarjeta del próximo partido → **📅 Cambiar fecha y hora** (o Admin → Partidos → 📅). Al guardar la hora se abre la votación y se avisa a todos.
+2. **Partido nuevo** (otra competición, amistoso, temporada que viene): Admin → Partidos → **➕ Añadir partido**. Elige el escudo de la lista o pega un **enlace a la imagen del escudo**.
+3. **Fantasy**: se abre solo. Si quieres controlarlo, ve a **Admin → Fantasy → ⚙️** en el partido:
+   - 🤖 **Automático**: abierto hasta que empiece el partido.
+   - 🟢 **Abierto ahora**: lo abres tú, con hora de cierre o sin ella (hasta que lo cierres). Se avisa a todos.
+   - 🔒 **Cerrado**: nadie puede predecir.
+   - ⛔ **Desactivado**: el partido no cuenta para la clasificación Fantasy.
+   - Desde ahí también puedes **ver las predicciones**, borrar la de alguien o **borrar todas**.
+
+### Durante / después del partido
+4. **Tarjetas**: abre el partido → **🟨🟥** y pon amarillas y rojas. Se ve al momento en todos los móviles.
+5. **Resultado**: abre el partido → **📝 Resultado**. En el mismo formulario:
+   - Marcador.
+   - **¿Quién fue al partido?**: solo esos pueden valorar y ser valorados.
+   - **Quinteto inicial** en la pista (portero, cierre, alas y pívot): para los puntos Fantasy.
+   - **¿Quién ha marcado?**: para los goleadores y los puntos Fantasy.
+
+### Otras cosas
+- **Puntos del Fantasy**: Admin → Fantasy → *Puntos* (goleador, titular, portero, máximo de goleadores). La clasificación se recalcula sola.
+- **Clasificación de la liga**: Admin → Clasificación. Abre la web de la liga, *Seleccionar todo* → *Copiar*, pégalo y pulsa **Actualizar**.
+- **Entrenos**: se crean solos los martes. Puedes crear, editar o borrar encuestas en Admin → Entrenos, y cambiar la hora o el lugar en Ajustes.
+- **Jugadores**: Admin → Jugadores y permisos. Editar nombre, dorsal y nombre completo; **goles y tarjetas anteriores** (de antes de usar la app); añadir o borrar jugadores; **Liberar** un móvil; **Hacer admin / Quitar admin**. Siempre queda al menos un admin.
+- **Valoraciones**: son **anónimas**. Ni el admin ve quién puso cada nota desde la app.
 
 ---
 

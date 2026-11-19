@@ -83,12 +83,16 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
     // Fantasy: cada jugador guarda SU predicción hasta que empieza el partido
+    // Modo del Fantasy de cada partido (lo decide el admin): auto | open | closed | off
     function predOpen(mid) {
       let m = get(/databases/$(database)/documents/matches/$(mid)).data;
-      return m.get('golesGO', null) == null && (
-        m.get('date', null) == null
-        || (m.get('timeKnown', false) == true && request.time < m.date)
-        || (m.get('timeKnown', false) != true && request.time < m.date + duration.value(1, 'd')));
+      let f = m.get('fantasy', {});
+      let st = f.get('status', 'auto');
+      return (st == 'open' && (f.get('closesAt', null) == null || request.time < f.closesAt))
+        || (st == 'auto' && m.get('golesGO', null) == null && (
+          m.get('date', null) == null
+          || (m.get('timeKnown', false) == true && request.time < m.date)
+          || (m.get('timeKnown', false) != true && request.time < m.date + duration.value(1, 'd'))));
     }
     match /matches/{mid}/predictions/{pid} {
       allow read: if signedIn();
@@ -96,7 +100,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['gk', 'starters', 'pos', 'scorers', 'updatedAt'])
         && request.resource.data.gk is string
         && request.resource.data.starters is list && request.resource.data.starters.size() <= 4
-        && request.resource.data.scorers is list && request.resource.data.scorers.size() <= 6
+        && request.resource.data.scorers is list && request.resource.data.scorers.size() <= 12
         && request.resource.data.pos is map && request.resource.data.pos.size() <= 4;
       allow delete: if isAdmin();
     }

@@ -660,16 +660,37 @@ function lastPlayed() {
 // =====================================================================
 //  FANTASY: predicciones de portero, cuarteto inicial y goleadores
 // =====================================================================
-const PTS = { scorer: 3, starter: 1, gk: 1 };
+// Puntos configurables por el admin (Admin → Fantasy). Valores por defecto:
+const PTS_DEF = { scorer: 3, starter: 1, gk: 1, maxScorers: 6 };
+const PTS = new Proxy({}, { get: (_, k) => +(S.cfg.fantasyPts?.[k] ?? PTS_DEF[k]) });
 const fieldPlayers = () => sortedPlayers().filter((p) => p.position !== "Entrenador");
 // Abierto hasta que empieza el partido (si no hay hora, hasta el final del día del partido)
-function predOpen(m) {
+const fxStatus = (m) => m.fantasy?.status || "auto";
+function autoOpen(m) {
   if (resultOf(m)) return false;
   const d = toDate(m.date);
   if (!d) return true;
   return Date.now() < (m.timeKnown ? d.getTime() : d.getTime() + 864e5);
 }
+function predOpen(m) {
+  const st = fxStatus(m);
+  if (st === "open") { const c = toDate(m.fantasy.closesAt); return !c || Date.now() < c.getTime(); }
+  if (st === "auto") return autoOpen(m);
+  return false; // closed u off
+}
+const FX_LABEL = { auto: "Automático", open: "Abierto (manual)", closed: "Cerrado", off: "Desactivado" };
+function fxState(m) {
+  const st = fxStatus(m);
+  if (st === "off") return ["off", "Desactivado"];
+  if (predOpen(m)) return ["open", "Abierto"];
+  if (resultOf(m)) return ["done", "Terminado"];
+  return ["closed", "Cerrado"];
+}
 function predDeadlineText(m) {
+  if (fxStatus(m) === "open") {
+    const c = toDate(m.fantasy.closesAt);
+    return c ? `Se cierra el ${fmtDay(c)} a las ${fmtTime(c)}` : "Abierto hasta que el admin lo cierre";
+  }
   const d = toDate(m.date);
   if (!d) return "Se cierra al empezar el partido";
   return m.timeKnown ? `Se cierra al empezar: ${fmtDay(d)} a las ${fmtTime(d)}` : `Se cierra al empezar el partido (${fmtDay(d)})`;
@@ -691,7 +712,7 @@ function predPoints(m, pr) {
 function fantasyTable() {
   const out = {};
   for (const m of S.matches) {
-    if (!resultOf(m)) continue;
+    if (!resultOf(m) || fxStatus(m) === "off") continue;
     for (const [pid, pr] of S.preds.get(m.id) || []) {
       const r = predPoints(m, pr); if (!r) continue;
       (out[pid] ||= { pts: 0, n: 0, sc: 0 }); out[pid].pts += r.total; out[pid].n++; out[pid].sc += r.hitsScorers.length;
@@ -701,17 +722,13 @@ function fantasyTable() {
 }
 const chipNames = (ids, hits) => (ids || []).map((id) => `<span class="chip-s ${hits ? (hits.includes(id) ? "ok" : "ko") : ""}">${esc(pname(id))}</span>`).join("") || `<span class="muted small">—</span>`;
 
-function viewFantasy() {
-  const nx = S.matches.find((m) => predOpen(m) && toDate(m.date)) || null;
-  const t = fantasyTable();
-  const played = S.matches.filter((m) => resultOf(m) && S.preds.get(m.id)?.size).reverse();
-  let next = `<div class="card empty">No hay ningún partido abierto para predecir ahora mismo.</div>`;
-  if (nx) {
+function fantasyOpenCard(nx) {
+  {
     const mine = S.preds.get(nx.id)?.get(S.me);
     const n = S.preds.get(nx.id)?.size || 0;
     const [ch, ca] = crests(nx); const [h, a] = teams(nx);
-    next = `<div class="card hero">
-      <span class="tag gold">PREDICCIÓN · PRÓXIMO PARTIDO</span>
+    return `<div class="card hero">
+      <span class="tag gold">🎯 FANTASY ABIERTO</span>
       <div class="vs"><div class="team ${nx.isHome !== false ? "go" : ""}">${crestImg(ch, "lg")}${esc(h)}</div><div class="score">vs</div><div class="team ${nx.isHome === false ? "go" : ""}">${crestImg(ca, "lg")}${esc(a)}</div></div>
       <p class="countdown">⏳ ${predDeadlineText(nx)} · ${n} ${n === 1 ? "predicción" : "predicciones"}</p>
       ${mine ? `<div class="pred-sum">
@@ -720,8 +737,19 @@ function viewFantasy() {
           <div><b>⚽ Goleadores</b>${chipNames(mine.scorers)}</div>
         </div>` : `<p class="muted small" style="text-align:center">Aún no has hecho tu predicción.</p>`}
       <button class="btn ${mine ? "" : "primary"} block" data-act="predict" data-id="${nx.id}">${mine ? "✏️ Cambiar mi predicción" : "🎯 Hacer mi predicción"}</button>
+      ${isAdmin() ? `<button class="btn sm ghost block" style="margin-top:6px" data-act="fxadmin" data-id="${nx.id}">⚙️ Gestionar este Fantasy</button>` : ""}
     </div>`;
   }
+}
+function viewFantasy() {
+  // abiertos a mano + el siguiente partido en automático
+  const manual = S.matches.filter((m) => fxStatus(m) === "open" && predOpen(m));
+  const auto = S.matches.find((m) => fxStatus(m) === "auto" && autoOpen(m) && toDate(m.date));
+  const open = [...manual, ...(auto && !manual.includes(auto) ? [auto] : [])].sort((a, b) => (toDate(a.date)?.getTime() ?? 9e15) - (toDate(b.date)?.getTime() ?? 9e15));
+  const t = fantasyTable();
+  const played = S.matches.filter((m) => resultOf(m) && fxStatus(m) !== "off" && S.preds.get(m.id)?.size).reverse();
+  const next = open.length ? open.map(fantasyOpenCard).join("")
+    : `<div class="card empty">No hay ningún Fantasy abierto ahora mismo.${isAdmin() ? `<br><button class="btn sm primary" style="margin-top:10px" data-act="atab-fx">⚙️ Abrir uno (Admin → Fantasy)</button>` : ""}</div>`;
   return `<div class="section-title"><h2>🎯 Fantasy</h2></div>
     ${next}
     <details class="card rules"><summary><b>📋 Cómo se puntúa</b></summary>
@@ -747,7 +775,7 @@ function fantasyMatchModal(mid) {
   const m = S.matches.find((x) => x.id === mid);
   const lu = m.lineup || {};
   const scorers = goalsOf(m).map(([pid]) => pid);
-  const rows = [...(S.preds.get(mid) || [])].map(([pid, pr]) => [pid, pr, predPoints(m, pr)])
+  const rows = [...(S.preds.get(mid) || [])].filter(([pid]) => !predOpen(m) || isAdmin() || pid === S.me).map(([pid, pr]) => [pid, pr, predPoints(m, pr)])
     .sort((a, b) => (b[2]?.total ?? -1) - (a[2]?.total ?? -1));
   openModal(`<h3>🎯 ${m.isHome !== false ? "vs" : "@"} ${esc(m.rival)} · ${m.golesGO ?? "?"}-${m.golesRival ?? "?"}</h3>
     <div class="pred-sum">
@@ -757,11 +785,12 @@ function fantasyMatchModal(mid) {
     </div>
     ${rows.map(([pid, pr, r]) => `<details class="rate-row"><summary><span class="rk">${pid === S.me ? "⭐" : ""}</span><span class="nm">${esc(pname(pid))}</span><span></span><span class="avg hi">${r ? `+${r.total}` : "—"}</span></summary>
       <div class="pred-sum small">
-        <div><b>🧤</b>${chipNames([pr.gk].filter(Boolean), r?.hitGk ? [pr.gk] : [])}</div>
-        <div><b>👟</b>${chipNames(pr.starters, r?.hitsStarters || [])}</div>
-        <div><b>⚽</b>${chipNames(pr.scorers, r?.hitsScorers || [])}</div>
+        <div><b>🧤</b>${chipNames([pr.gk].filter(Boolean), r ? (r.hitGk ? [pr.gk] : []) : null)}</div>
+        <div><b>👟</b>${chipNames(pr.starters, r ? r.hitsStarters : null)}</div>
+        <div><b>⚽</b>${chipNames(pr.scorers, r ? r.hitsScorers : null)}</div>
+        ${isAdmin() ? `<div><button class="btn sm" data-act="fxdel" data-id="${mid}" data-pid="${pid}">🗑️ Borrar la predicción de ${esc(pname(pid))}</button></div>` : ""}
       </div></details>`).join("") || `<p class="muted">Nadie hizo predicción.</p>`}
-    <div class="acts">${isAdmin() ? `<button class="btn wine" data-act="goals" data-id="${mid}">📝 Resultado y alineación</button>` : ""}<button class="btn primary" data-act="close">Cerrar</button></div>`);
+    <div class="acts">${isAdmin() ? `<button class="btn" data-act="fxadmin" data-id="${mid}">⚙️ Gestionar</button><button class="btn wine" data-act="goals" data-id="${mid}">📝 Resultado</button>` : ""}<button class="btn primary" data-act="close">Cerrar</button></div>`);
 }
 
 // ----- Pista de fútbol sala: portero + rombo (cierre, alas, pívot) -----
@@ -815,8 +844,8 @@ function predictForm(mid) {
     <h3>🎯 Predicción · ${m.isHome !== false ? "vs" : "@"} ${esc(m.rival)}</h3>
     <p class="muted small">${predDeadlineText(m)}. Toca cada posición y elige la camiseta. Si aciertas un titular cuenta aunque juegue en otra posición.</p>
     <div id="courtBox"></div>
-    <div class="bebas fx-h">⚽ ¿Quién marcará? <span class="muted small">(hasta 6 · +${PTS.scorer} por acierto)</span></div>
-    <div class="chips" data-max="6">${fieldPlayers().map((p) => chip("sc", p.id, pr.scorers?.includes(p.id))).join("")}</div>
+    <div class="bebas fx-h">⚽ ¿Quién marcará? <span class="muted small">(hasta ${PTS.maxScorers} · +${PTS.scorer} por acierto)</span></div>
+    <div class="chips" data-max="${PTS.maxScorers}">${fieldPlayers().map((p) => chip("sc", p.id, pr.scorers?.includes(p.id))).join("")}</div>
     <div class="acts"><button type="button" class="btn" data-act="close">Cancelar</button><button class="btn primary" type="submit">Guardar predicción</button></div>
   </form>`);
   drawCourt();
@@ -1008,8 +1037,8 @@ async function setupForegroundPush() {
 //  PANEL DE ADMINISTRACIÓN (solo role == "admin")
 // =====================================================================
 function viewAdmin() {
-  const sub = [["partidos", "Partidos"], ["entrenos", "Entrenos"], ["clasif", "Clasificación"], ["jugadores", "Jugadores y permisos"], ["ajustes", "Ajustes"]];
-  const body = { partidos: adminMatches, entrenos: adminTrainings, clasif: adminStandings, jugadores: adminPlayers, ajustes: adminSettings }[S.adminTab]();
+  const sub = [["partidos", "Partidos"], ["fantasy", "Fantasy"], ["entrenos", "Entrenos"], ["clasif", "Clasificación"], ["jugadores", "Jugadores y permisos"], ["ajustes", "Ajustes"]];
+  const body = { partidos: adminMatches, fantasy: adminFantasy, entrenos: adminTrainings, clasif: adminStandings, jugadores: adminPlayers, ajustes: adminSettings }[S.adminTab]();
   return `<div class="section-title"><h2>Administración</h2></div>
     <div class="subtabs">${sub.map(([k, l]) => `<button class="btn sm ${S.adminTab === k ? "on" : ""}" data-act="atab" data-tab="${k}">${l}</button>`).join("")}</div>
     ${body}`;
@@ -1032,6 +1061,62 @@ function adminTrainings() {
     <div class="card" style="padding:4px 12px">${S.trainings.map((t) => `<div class="admin-item"><div><b>${cap(fmtDay(toDate(t.date)))}</b><br>
       <span class="muted small">${esc(t.time || "")} ${t.place ? "· " + esc(t.place) : ""} · ${Object.values(t.votes || {}).filter((v) => v === "si").length} van</span></div>
       <div class="acts"><button class="btn sm" data-act="train-edit" data-id="${t.id}">Editar</button></div></div>`).join("") || `<div class="empty">Sin entrenos</div>`}</div>`;
+}
+
+function adminFantasy() {
+  const p = { ...PTS_DEF, ...(S.cfg.fantasyPts || {}) };
+  return `<div class="card">
+    <h3>🎯 Cómo funciona</h3>
+    <p class="small muted">Cada partido tiene su Fantasy. En <b>Automático</b> se abre solo y se cierra al empezar el partido. Puedes <b>abrirlo a mano</b> cuando quieras (con o sin hora de cierre), <b>cerrarlo</b>, o <b>desactivarlo</b> para que no cuente. Al acabar, pon el resultado, quién fue, el quinteto inicial y los goleadores en <b>📝 Resultado</b> y los puntos se calculan solos.</p>
+  </div>
+  <div class="card" style="padding:4px 12px">${S.matches.map((m) => {
+    const [cls, label] = fxState(m); const n = S.preds.get(m.id)?.size || 0; const d = toDate(m.date);
+    return `<div class="admin-item"><div style="display:flex;gap:8px;align-items:center">${crestImg(m.crest)}<div><b>${m.isHome !== false ? "vs" : "@"} ${esc(m.rival)}</b><br>
+      <span class="muted small">${d ? fmtShort(d) : "sin fecha"} · ${n} ${n === 1 ? "predicción" : "predicciones"} · ${FX_LABEL[fxStatus(m)]}</span></div></div>
+      <div class="acts"><span class="fxb ${cls}">${label}</span><button class="btn sm" data-act="fxadmin" data-id="${m.id}">⚙️</button></div></div>`;
+  }).join("") || `<div class="empty">No hay partidos. Créalos en Admin → Partidos.</div>`}</div>
+  <form class="card" data-form="fxpts">
+    <h3>🏅 Puntos</h3>
+    <div class="row2"><div><label>⚽ Por goleador acertado</label><input type="number" min="0" max="20" name="scorer" value="${p.scorer}"></div>
+      <div><label>👟 Por titular acertado</label><input type="number" min="0" max="20" name="starter" value="${p.starter}"></div></div>
+    <div class="row2"><div><label>🧤 Por acertar el portero</label><input type="number" min="0" max="20" name="gk" value="${p.gk}"></div>
+      <div><label>Máx. goleadores a elegir</label><input type="number" min="1" max="12" name="maxScorers" value="${p.maxScorers}"></div></div>
+    <p class="muted small">Si cambias los puntos, la clasificación se recalcula entera con los nuevos valores.</p>
+    <div class="acts"><button class="btn primary" type="submit">Guardar puntos</button></div>
+  </form>`;
+}
+function fxAdminForm(mid) {
+  const m = S.matches.find((x) => x.id === mid);
+  const st = fxStatus(m); const n = S.preds.get(mid)?.size || 0;
+  openModal(`<form data-form="fxadmin" data-id="${mid}">
+    <h3>⚙️ Fantasy · ${m.isHome !== false ? "vs" : "@"} ${esc(m.rival)}</h3>
+    <p class="muted small">Estado actual: <b>${fxState(m)[1]}</b> · ${n} ${n === 1 ? "predicción" : "predicciones"}</p>
+    <label>Modo</label>
+    <select name="status">
+      <option value="auto" ${st === "auto" ? "selected" : ""}>🤖 Automático (abierto hasta que empiece el partido)</option>
+      <option value="open" ${st === "open" ? "selected" : ""}>🟢 Abierto ahora (lo abro yo)</option>
+      <option value="closed" ${st === "closed" ? "selected" : ""}>🔒 Cerrado (no se puede predecir)</option>
+      <option value="off" ${st === "off" ? "selected" : ""}>⛔ Desactivado (no cuenta para la clasificación)</option>
+    </select>
+    <label>Cierre (solo para “Abierto ahora”; vacío = hasta que lo cierre yo)</label>
+    <input type="datetime-local" name="closesAt" value="${toLocalInput(toDate(m.fantasy?.closesAt)) || (m.timeKnown ? toLocalInput(toDate(m.date)) : "")}">
+    <p class="muted small">Al abrirlo a mano se avisa a todos con una notificación (en menos de 1 hora).</p>
+    <div class="acts"><button type="button" class="btn" data-act="close">Cancelar</button><button class="btn primary" type="submit">Guardar</button></div>
+    <div class="acts">
+      <button type="button" class="btn sm" data-act="fx" data-id="${mid}">👀 Ver predicciones</button>
+      <button type="button" class="btn sm wine" data-act="goals" data-id="${mid}">📝 Resultado</button>
+      ${n ? `<button type="button" class="btn sm" data-act="fxreset" data-id="${mid}">🗑️ Borrar todas</button>` : ""}
+    </div>
+  </form>`);
+}
+async function saveFxAdmin(form) {
+  const f = Object.fromEntries(new FormData(form));
+  const m = S.matches.find((x) => x.id === form.dataset.id);
+  const fantasy = { status: f.status, closesAt: f.status === "open" && f.closesAt ? Timestamp.fromDate(new Date(f.closesAt)) : null };
+  // avisar de nuevo solo si se pasa a "abierto" desde otro estado
+  fantasy.notified = f.status === "open" ? (fxStatus(m) === "open" ? !!m.fantasy?.notified : false) : !!m.fantasy?.notified;
+  await updateDoc(doc(db, "matches", m.id), { fantasy });
+  toast(`Fantasy: ${FX_LABEL[f.status]}`);
 }
 
 function adminStandings() {
@@ -1100,6 +1185,7 @@ function matchForm(m = {}) {
     <label>Rival</label><input name="rival" required value="${esc(m.rival || "")}">
     <label>Escudo del rival</label><select name="crest"><option value="">(sin escudo)</option>${Object.entries(CRESTS).map(([k, n]) =>
       `<option value="crests/${k}.png" ${m.crest === `crests/${k}.png` ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
+    <label>…o enlace a la imagen del escudo (para equipos nuevos)</label><input name="crestUrl" type="url" placeholder="https://…" value="${m.crest && /^https?:/.test(m.crest) ? esc(m.crest) : ""}">
     <div class="row2"><div><label>Fecha</label><input type="date" name="date" value="${toDateInput(d)}"></div>
       <div><label>Hora (vacío = sin publicar)</label><input type="time" name="time" value="${m.timeKnown ? toTimeInput(d) : ""}"></div></div>
     <label>Pabellón</label><input name="venue" value="${esc(m.venue || "")}">
@@ -1180,7 +1266,7 @@ async function saveMatch(form) {
   let dl = f.pollDeadline && !(dateChanged && dlUntouched) ? new Date(f.pollDeadline) : (timeKnown ? computeDeadline(date) : null);
   const data = {
     jornada: f.jornada ? +f.jornada : null, rival: f.rival.trim(), isHome: f.isHome === "1",
-    date: date ? Timestamp.fromDate(date) : null, timeKnown, venue: f.venue.trim(), crest: f.crest || null,
+    date: date ? Timestamp.fromDate(date) : null, timeKnown, venue: f.venue.trim(), crest: (f.crestUrl || "").trim() || f.crest || null,
     golesGO: f.golesGO === "" ? null : +f.golesGO, golesRival: f.golesRival === "" ? null : +f.golesRival,
     pollDeadline: dl ? Timestamp.fromDate(dl) : null, manual: !!f.manual, updatedAt: serverTimestamp(),
   };
@@ -1266,6 +1352,18 @@ document.addEventListener("click", async (e) => {
         return drawCourt();
       }
       case "fx": return fantasyMatchModal(id);
+      case "fxadmin": return fxAdminForm(id);
+      case "atab-fx": S.tab = "admin"; S.adminTab = "fantasy"; return render();
+      case "fxdel": {
+        if (!(await confirmBox("¿Borrar esta predicción?", `Se borrará la predicción de ${esc(pname(b.dataset.pid))}.`))) return;
+        await deleteDoc(doc(db, "matches", id, "predictions", b.dataset.pid)); toast("Predicción borrada"); return fantasyMatchModal(id);
+      }
+      case "fxreset": {
+        const list = [...(S.preds.get(id)?.keys() || [])];
+        if (!(await confirmBox("¿Borrar TODAS las predicciones?", `Se borrarán ${list.length} predicciones de este partido.`))) return;
+        const bt = writeBatch(db); list.forEach((pid) => bt.delete(doc(db, "matches", id, "predictions", pid))); await bt.commit();
+        toast("Predicciones borradas"); return;
+      }
       case "player": return playerModal(id);
       case "g-plus": case "g-minus": {
         const inp = b.parentElement.querySelector("input");
@@ -1310,6 +1408,12 @@ document.addEventListener("submit", async (e) => {
     if (kind === "match") await saveMatch(form);
     if (kind === "date") await saveDate(form);
     if (kind === "predict") await savePrediction(form);
+    if (kind === "fxadmin") await saveFxAdmin(form);
+    if (kind === "fxpts") {
+      const f = Object.fromEntries(new FormData(form));
+      await setDoc(doc(db, "config", "app"), { fantasyPts: { scorer: +f.scorer, starter: +f.starter, gk: +f.gk, maxScorers: Math.max(1, +f.maxScorers) } }, { merge: true });
+      toast("Puntos guardados · clasificación recalculada");
+    }
     if (kind === "cards") await saveCards(form);
     if (kind === "goals") { await saveGoals(form); openMatchModal(form.dataset.id); return; }
     if (kind === "rate") { await saveRatings(form); S.openMatch = form.dataset.id; openMatchModal(form.dataset.id); return; }

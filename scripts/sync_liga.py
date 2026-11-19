@@ -239,6 +239,23 @@ def notify_pending(db, cfg):
             snap.reference.update(updates)
 
 
+def notify_fantasy(db):
+    """Avisa cuando el admin abre a mano el Fantasy de un partido."""
+    for snap in db.collection("matches").stream():
+        m = snap.to_dict()
+        f = m.get("fantasy") or {}
+        if f.get("status") != "open" or f.get("notified"):
+            continue
+        closes = f.get("closesAt")
+        if closes and closes < now():
+            continue
+        cierre = f" Cierra el {human(closes)}." if closes else ""
+        body = f"Predice el quinteto inicial y los goleadores contra {m.get('rival')}.{cierre}"
+        print(f"Fantasy abierto: {body}")
+        send_push(db, "🎯 ¡Fantasy abierto!", body)
+        snap.reference.update({"fantasy.notified": True})
+
+
 def main():
     db = init()
     cfg = get_config(db)
@@ -247,6 +264,7 @@ def main():
         # ligacomarcal.com bloquea las visitas automáticas (403): los partidos los gestiona el admin.
         print("Lectura de la web de la liga desactivada (config/app.leagueSync = false).")
         notify_pending(db, cfg)
+        notify_fantasy(db)
         return
     try:
         html = fetch(url)
@@ -287,6 +305,7 @@ def main():
         print(f"ERROR leyendo la web de la liga: {e}", file=sys.stderr)
     # Las notificaciones se envían siempre (también para partidos metidos a mano por el admin)
     notify_pending(db, cfg)
+    notify_fantasy(db)
 
 
 if __name__ == "__main__":
