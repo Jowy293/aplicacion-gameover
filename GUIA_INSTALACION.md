@@ -90,6 +90,8 @@ Enlace: **https://jowy293.github.io/aplicacion-gameover/**
 - **Fotos** (pestaña 📷): el fotógrafo (**GAIZKA**) o un admin entra en el partido → **📤 Subir fotos** (puede elegir muchas a la vez). Se reducen a 2048 px para que quepan gratis, y en menos de una hora llega un aviso a todos. Los jugadores ven las miniaturas, tocan la que quieran y pulsan **⬇️ Descargar** (en iPhone se abre el menú de compartir → *Guardar imagen*). El fotógrafo o un admin pueden borrar fotos (🗑️).
   - Para que otra persona pueda subir fotos: Admin → Jugadores → Editar → Posición **Fotógrafo**.
 - **Multas** (Más → 💸 Multas): **➕ Poner multa** (jugador, motivo, precio, fecha y nota), **✓ Pagada** / **↩︎ Pendiente**, **Editar** o **🗑️ Quitar**. En **⚙️ Tipos y precios** cambias el precio o el nombre de cada tipo, añades o quitas tipos, y puedes aplicar los precios nuevos a las multas sin pagar. Cada jugador ve sus multas en su perfil.
+- **Notificaciones** (Admin → 🔔 Avisos): ves quién tiene los avisos activados (✅/❌ y si es iPhone o Android) y quién no ha entrado aún en la app. Con **📣 Enviar** mandas una notificación de prueba (o cualquier aviso) a todos. Llega en unos 5–15 minutos, y después ves a quién le llegó (✅), a quién le falló (⚠️) y quién la abrió (👀). A quien no las tenga activadas le sale una ventana al abrir la app explicándole cómo hacerlo.
+- **Hucha de la cena** (Más → 🐷 Multas): todo el dinero de las multas se suma en la hucha. El oro macizo es lo cobrado y las rayas lo que falta por cobrar. El objetivo (200 € al principio) se cambia en **⚙️ Precios y hucha**.
 - **Crear partido**: botón **➕ Crear partido** en la pestaña Partidos (también en Admin → Partidos).
 - **Valoraciones**: son **anónimas**. Ni el admin ve quién puso cada nota desde la app.
 

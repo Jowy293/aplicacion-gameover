@@ -313,3 +313,16 @@ dialog[open] { animation: fadeIn .14s ease-out; }
 .card .fine { background: rgba(0,0,0,.25); }
 .ft-row { display: grid; grid-template-columns: 1fr 80px auto; gap: 6px; margin-bottom: 6px; }
 .txt-ko { color: var(--ko); } .txt-ok { color: var(--ok); }
+.steps { padding-left: 20px; line-height: 1.7; }
+
+/* Hucha de la cena */
+.piggy { text-align: center; background: radial-gradient(ellipse at 50% 30%, rgba(236,95,149,.22), rgba(4,22,13,.85) 70%); border-color: rgba(242,197,68,.45); }
+.piggy-title { font-family: "Bebas Neue", sans-serif; font-size: 22px; color: var(--gold); letter-spacing: .05em; }
+.pig { width: 100%; max-width: 300px; display: block; margin: 4px auto 0; filter: drop-shadow(0 8px 14px rgba(0,0,0,.4)); }
+.piggy-amount { font-family: "Bebas Neue", sans-serif; font-size: 54px; line-height: 1; margin-top: 2px;
+  background: linear-gradient(180deg, #fff3b0, #e3a91a); -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: 0 2px 12px rgba(242,197,68,.25); }
+.goal-bar { height: 12px; border-radius: 99px; overflow: hidden; display: flex; background: rgba(255,255,255,.08); margin: 10px 0 6px; }
+.goal-paid { background: linear-gradient(90deg, #f2c544, #ffe27a); }
+.goal-pend { background: repeating-linear-gradient(45deg, rgba(242,197,68,.55) 0 6px, rgba(242,197,68,.25) 6px 12px); }
+.coin-drop { animation: coinDrop 2.6s ease-in 0.4s infinite; transform-origin: center; }
+@keyframes coinDrop { 0% { transform: translateY(-14px); opacity: 0; } 15% { opacity: 1; } 55% { transform: translateY(20px); opacity: 1; } 70%, 100% { transform: translateY(26px); opacity: 0; } }

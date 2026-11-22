@@ -17,6 +17,7 @@ import requests
 import urllib3
 from bs4 import BeautifulSoup
 
+import push_queue
 from common import TZ, compute_deadline, get_config, human, init, now, send_push
 
 TEAM_RE = re.compile(r"game\s*over", re.I)
@@ -287,6 +288,7 @@ def main():
         notify_pending(db, cfg)
         notify_fantasy(db)
         notify_photos(db)
+        push_queue.process(db)
         return
     try:
         html = fetch(url)
@@ -329,6 +331,7 @@ def main():
     notify_pending(db, cfg)
     notify_fantasy(db)
     notify_photos(db)
+    push_queue.process(db)
 
 
 if __name__ == "__main__":

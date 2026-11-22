@@ -237,7 +237,7 @@ function startMain() {
     S.fines = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (toDate(b.date) ?? 0) - (toDate(a.date) ?? 0));
     render();
   }, (e) => console.warn("multas:", e.message)));
-  S.unsub.push(onSnapshot(doc(db, "config", "fines"), (d) => { S.fineTypes = d.exists() ? d.data().types || [] : null; render(); }));
+  S.unsub.push(onSnapshot(doc(db, "config", "fines"), (d) => { S.fineTypes = d.exists() ? d.data().types || [] : null; S.fineGoal = d.exists() ? d.data().goal : null; render(); }));
   // Fantasy: matches/{partido}/predictions/{jugador}
   S.unsub.push(onSnapshot(collectionGroup(db, "predictions"), (snap) => {
     const map = new Map();
@@ -250,6 +250,19 @@ function startMain() {
     render();
   }, (e) => console.warn("fantasy:", e.message)));
   setupForegroundPush();
+  setTimeout(() => notifPrompt(), 1500);
+  const ack = new URLSearchParams(location.search).get("ack");
+  if (ack) {
+    updateDoc(doc(db, "pushRequests", ack), { [`acks.${S.me}`]: serverTimestamp() }).catch(() => {});
+    history.replaceState(null, "", location.pathname);
+  }
+  if (isAdmin()) {
+    S.unsub.push(onSnapshot(collection(db, "tokens"), (snap) => { S.tokens = Object.fromEntries(snap.docs.map((d) => [d.data().playerId, d.data()])); render(); }, () => {}));
+    S.unsub.push(onSnapshot(collection(db, "pushRequests"), (snap) => {
+      S.pushReqs = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (toDate(b.createdAt) ?? new Date()) - (toDate(a.createdAt) ?? new Date()));
+      render();
+    }, () => {}));
+  }
   clearInterval(S._tick); S._tick = setInterval(() => { if (!["admin"].includes(S.tab)) render(); }, 30000);
 }
 
@@ -301,13 +314,9 @@ function paint() {
 }
 
 function notifBanner() {
-  if (!("Notification" in window)) {
-    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
-    return ios ? `<div class="banner">📲 Para recibir avisos en iPhone, añade la app a la pantalla de inicio (Compartir → “Añadir a pantalla de inicio”) y ábrela desde allí.</div>` : "";
-  }
-  if (Notification.permission === "granted") return "";
-  if (Notification.permission === "denied") return `<div class="banner">🔕 Has bloqueado las notificaciones. Actívalas en los ajustes del navegador para enterarte de los partidos.</div>`;
-  return `<div class="banner">🔔 Activa los avisos para saber cuándo se publica la hora del partido.<button class="btn sm primary" data-act="notif">Activar</button></div>`;
+  const st = notifState();
+  if (st === "on" || st === "unsupported") return "";
+  return `<div class="banner">${st === "denied" ? "🔕 Tienes las notificaciones bloqueadas." : st === "ios-install" ? "📲 Instala la app para recibir avisos." : "🔔 Activa los avisos para no perderte nada."}<button class="btn sm primary" data-act="${st === "off" ? "notif" : "notif-help"}">${st === "off" ? "Activar" : "Cómo"}</button></div>`;
 }
 
 // ----- votación (común a partidos y entrenos) -----
@@ -984,7 +993,7 @@ function viewMore() {
   const item = (tab, ic, title, sub) => `<div class="card more-item" data-act="tab" data-tab="${tab}"><span class="mi-ic">${ic}</span><div><b>${title}</b><div class="muted small">${sub}</div></div><span class="mi-go">›</span></div>`;
   return `<div class="section-title"><h2>Más</h2></div>
     ${item("perfil", "👕", "Mi perfil", `${esc(p.fullName || p.name)} · ${isStaff(p) ? esc(p.position) : "Dorsal " + esc(p.number)}`)}
-    ${item("multas", "💸", "Multas", pend ? `Tienes ${money(pend)} pendientes` : "Estás al día 👍")}
+    ${item("multas", "🐷", "Multas y hucha de la cena", `Hucha: ${money(S.fines.reduce((a, f) => a + (+f.price || 0), 0))} · ${pend ? `debes ${money(pend)}` : "estás al día 👍"}`)}
     ${isAdmin() ? item("admin", "🛠️", "Administración", "Partidos, Fantasy, entrenos, jugadores, ajustes") : ""}`;
 }
 const backToMore = () => `<button class="btn sm ghost" style="margin-top:10px" data-act="tab" data-tab="mas">‹ Más</button>`;
@@ -1136,6 +1145,52 @@ const DEFAULT_FINE_TYPES = [
   { id: "roja", name: "Tarjeta roja", price: 10 },
 ];
 const fineTypes = () => S.fineTypes ?? DEFAULT_FINE_TYPES;
+const dinnerGoal = () => +(S.fineGoal || 200);
+// Hucha virtual para la cena del equipo: se llena con el dinero de las multas
+function piggyBank() {
+  const total = S.fines.reduce((a, f) => a + (+f.price || 0), 0);
+  const paid = S.fines.filter((f) => f.paid).reduce((a, f) => a + (+f.price || 0), 0);
+  const goal = dinnerGoal();
+  const lvl = (x) => Math.max(0, Math.min(1, x / goal));
+  const top = 43, h = 124, yPaid = top + h * (1 - lvl(paid)), yTotal = top + h * (1 - lvl(total));
+  const pct = Math.round(lvl(total) * 100);
+  return `<div class="card piggy">
+    <div class="piggy-title">🍽️ Hucha para la cena del equipo</div>
+    <svg class="pig" viewBox="0 0 240 200" role="img" aria-label="Hucha con ${money(total)}">
+      <defs>
+        <linearGradient id="pigG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffc1d9"/><stop offset="1" stop-color="#ec5f95"/></linearGradient>
+        <linearGradient id="goldG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff1a8"/><stop offset=".5" stop-color="#f2c544"/><stop offset="1" stop-color="#c8920e"/></linearGradient>
+        <pattern id="pendP" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="#f2c544" opacity=".25"/><rect width="4" height="8" fill="#f2c544" opacity=".55"/></pattern>
+        <clipPath id="pigClip"><ellipse cx="125" cy="105" rx="85" ry="62"/></clipPath>
+        <radialGradient id="shine" cx=".35" cy=".3" r=".6"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+      </defs>
+      <ellipse cx="125" cy="188" rx="80" ry="7" fill="rgba(0,0,0,.25)"/>
+      <rect x="62" y="150" width="20" height="34" rx="8" fill="#e2508a"/><rect x="92" y="156" width="20" height="30" rx="8" fill="#d94680"/>
+      <rect x="140" y="156" width="20" height="30" rx="8" fill="#d94680"/><rect x="168" y="150" width="20" height="34" rx="8" fill="#e2508a"/>
+      <path d="M207 98 q18 -6 14 8 q-4 12 -14 4 q-6 -6 4 -10" fill="none" stroke="#e2508a" stroke-width="5" stroke-linecap="round"/>
+      <ellipse cx="125" cy="105" rx="85" ry="62" fill="url(#pigG)"/>
+      <g clip-path="url(#pigClip)">
+        <rect x="30" y="${yTotal.toFixed(1)}" width="200" height="200" fill="url(#pendP)"/>
+        <rect x="30" y="${yPaid.toFixed(1)}" width="200" height="200" fill="url(#goldG)"/>
+        ${paid > 0 ? `<path d="M30 ${yPaid.toFixed(1)} q25 -6 50 0 t50 0 t50 0 t50 0 v6 h-200 z" fill="#fff6c4" opacity=".55"/>` : ""}
+        ${[[70, 150], [105, 158], [150, 152], [180, 160], [125, 140], [88, 132], [162, 136]].filter(([, y]) => y > yPaid + 8).map(([x, y]) => `<circle cx="${x}" cy="${y}" r="9" fill="#ffd95a" stroke="#b8860b" stroke-width="2"/><text x="${x}" y="${y + 4}" text-anchor="middle" font-size="11" font-weight="800" fill="#8a6100">€</text>`).join("")}
+      </g>
+      <ellipse cx="125" cy="105" rx="85" ry="62" fill="url(#shine)"/>
+      <ellipse cx="125" cy="105" rx="85" ry="62" fill="none" stroke="#c43c75" stroke-width="3"/>
+      <path d="M78 52 l-8 -30 l30 18 z" fill="#ec5f95" stroke="#c43c75" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M150 48 l14 -26 l10 30 z" fill="#ec5f95" stroke="#c43c75" stroke-width="3" stroke-linejoin="round"/>
+      <ellipse cx="44" cy="112" rx="20" ry="16" fill="#f47aa8" stroke="#c43c75" stroke-width="3"/>
+      <ellipse cx="38" cy="112" rx="3.5" ry="5" fill="#a52a5c"/><ellipse cx="50" cy="112" rx="3.5" ry="5" fill="#a52a5c"/>
+      <circle cx="74" cy="88" r="6" fill="#3b1027"/><circle cx="76" cy="86" r="2" fill="#fff"/>
+      <rect x="108" y="46" width="40" height="8" rx="4" fill="#7a1f45"/>
+      <g class="coin-drop"><circle cx="128" cy="30" r="12" fill="url(#goldG)" stroke="#b8860b" stroke-width="2"/><text x="128" y="35" text-anchor="middle" font-size="14" font-weight="900" fill="#8a6100">€</text></g>
+    </svg>
+    <div class="piggy-amount">${money(total)}</div>
+    <div class="muted small">Cobrado <b class="txt-ok">${money(paid)}</b> · Por cobrar <b class="txt-ko">${money(total - paid)}</b></div>
+    <div class="goal-bar"><div class="goal-paid" style="width:${lvl(paid) * 100}%"></div><div class="goal-pend" style="width:${(lvl(total) - lvl(paid)) * 100}%"></div></div>
+    <div class="small">${total >= goal ? `🎉 ¡Objetivo conseguido! ${money(total)} de ${money(goal)}` : `${pct}% del objetivo · faltan <b>${money(goal - total)}</b> para los ${money(goal)}`}</div>
+  </div>`;
+}
 const money = (n) => `${(+n || 0).toLocaleString("es-ES", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} €`;
 const finesOf = (pid) => S.fines.filter((f) => f.playerId === pid);
 function fineRow(f, showName = true) {
@@ -1161,13 +1216,9 @@ function viewFines() {
   for (const f of all) if (!f.paid) { (debt[f.playerId] ||= { sum: 0, n: 0 }); debt[f.playerId].sum += +f.price || 0; debt[f.playerId].n++; }
   const ranking = Object.entries(debt).filter(([pid]) => S.players.has(pid)).sort((a, b) => b[1].sum - a[1].sum);
   return `${backToMore()}
-    <div class="section-title"><h2>💸 Multas</h2></div>
-    <div class="stats" style="margin-top:0">
-      <div class="stat"><div class="v">${money(pend)}</div><div class="l">Pendiente</div></div>
-      <div class="stat"><div class="v">${money(paid)}</div><div class="l">Bote cobrado</div></div>
-      <div class="stat"><div class="v">${all.length}</div><div class="l">Multas</div></div>
-    </div>
-    ${isAdmin() ? `<div class="row2" style="margin-top:12px"><button class="btn primary" data-act="fine-edit">➕ Poner multa</button><button class="btn" data-act="fine-types">⚙️ Tipos y precios</button></div>` : ""}
+    <div class="section-title"><h2>💸 Multas</h2><span class="muted small">${all.length} ${all.length === 1 ? "multa" : "multas"}</span></div>
+    ${piggyBank()}
+    ${isAdmin() ? `<div class="row2" style="margin-top:12px"><button class="btn primary" data-act="fine-edit">➕ Poner multa</button><button class="btn" data-act="fine-types">⚙️ Precios y hucha</button></div>` : ""}
     <div class="card" style="margin-top:12px"><h3>📋 Precios</h3>${fineTypes().map((t) => `<div class="admin-item"><span>${esc(t.name)}</span><b>${money(t.price)}</b></div>`).join("") || `<p class="muted small">No hay tipos de multa.</p>`}</div>
     <div class="card"><h3>🙋 Mis multas</h3>${finesSummaryHtml(S.me)}</div>
     ${ranking.length ? `<div class="card" style="padding:4px 12px"><h3 style="margin-top:10px">🧾 Quién debe</h3>${ranking.map(([pid, v], i) => `<div class="rate-row flat" data-act="player" data-id="${pid}"><span class="rk">${i + 1}</span><span class="nm">${esc(pname(pid))}</span><span class="muted small">${v.n} ${v.n === 1 ? "multa" : "multas"}</span><span class="avg lo" style="font-size:18px">${money(v.sum)}</span></div>`).join("")}</div>` : ""}
@@ -1202,11 +1253,12 @@ async function saveFine(form) {
 function fineTypesForm() {
   const row = (t = {}) => `<div class="ft-row"><input name="tn" placeholder="Motivo" value="${esc(t.name || "")}"><input name="tp" type="number" step="0.5" min="0" placeholder="€" value="${esc(t.price ?? "")}"><input type="hidden" name="ti" value="${esc(t.id || "")}"><button type="button" class="btn sm" data-act="ft-del">✕</button></div>`;
   openModal(`<form data-form="finetypes">
-    <h3>⚙️ Tipos de multa y precios</h3>
+    <h3>⚙️ Tipos de multa, precios y hucha</h3>
     <p class="muted small">Cambia el motivo o el precio, quita (✕) o añade tipos nuevos.</p>
     <div id="ftRows">${fineTypes().map(row).join("")}</div>
     <button type="button" class="btn sm" data-act="ft-add">➕ Añadir tipo</button>
     <label class="check"><input type="checkbox" name="applyUnpaid"> Aplicar los precios nuevos también a las multas que aún no se han pagado</label>
+    <label>🍽️ Objetivo de la hucha para la cena (€)</label><input type="number" min="1" step="5" name="goal" value="${dinnerGoal()}">
     <template id="ftTpl">${row()}</template>
     <div class="acts"><button type="button" class="btn" data-act="close">Cancelar</button><button class="btn primary" type="submit">Guardar</button></div>
   </form>`);
@@ -1215,7 +1267,7 @@ async function saveFineTypes(form) {
   const fd = new FormData(form);
   const names = fd.getAll("tn"), prices = fd.getAll("tp"), ids = fd.getAll("ti");
   const types = names.map((n, i) => ({ id: ids[i] || slug(n) || "tipo-" + i, name: n.trim(), price: Math.max(0, +prices[i] || 0) })).filter((t) => t.name);
-  await setDoc(doc(db, "config", "fines"), { types });
+  await setDoc(doc(db, "config", "fines"), { types, goal: Math.max(1, +fd.get("goal") || 200) });
   if (fd.get("applyUnpaid")) {
     const bt = writeBatch(db); let n = 0;
     for (const f of S.fines) {
@@ -1307,32 +1359,68 @@ function viewProfile() {
 }
 
 // ---------- notificaciones push ----------
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+const isStandalone = () => window.matchMedia?.("(display-mode: standalone)").matches || navigator.standalone === true;
+const platform = () => isIOS() ? "iPhone" : /android/i.test(navigator.userAgent) ? "Android" : "Ordenador";
+// on | off | denied | ios-install | unsupported
+function notifState() {
+  if (!("Notification" in window) || !("serviceWorker" in navigator)) return isIOS() && !isStandalone() ? "ios-install" : "unsupported";
+  if (Notification.permission === "granted") return "on";
+  if (Notification.permission === "denied") return "denied";
+  return "off";
+}
+async function saveToken(reg) {
+  const token = await getToken(getMessaging(fb), { vapidKey: self.VAPID_KEY, serviceWorkerRegistration: reg });
+  await setDoc(doc(db, "tokens", S.uid), { token, playerId: S.me, updatedAt: serverTimestamp(), platform: platform(), ua: navigator.userAgent.slice(0, 200) });
+}
+// Ventana que aparece al abrir la app si no tiene las notificaciones activadas
+function notifPrompt(force = false) {
+  const st = notifState();
+  if (st === "on" || st === "unsupported") return;
+  if (!force) { try { if (sessionStorage.getItem("gofc-notif-asked")) return; sessionStorage.setItem("gofc-notif-asked", "1"); } catch {} }
+  if ($modal.open) return;
+  const why = `<p class="muted small">Te avisaremos cuando se publique la <b>hora del partido</b>, se abra la <b>encuesta del entreno</b> o el <b>Fantasy</b>, y cuando haya <b>fotos nuevas</b>.</p>`;
+  const body = {
+    off: `<h3>🔔 Activa las notificaciones</h3>${why}<p class="small">Pulsa <b>Activar</b> y luego <b>Permitir</b>.</p>
+      <div class="acts"><button class="btn" data-act="close">Ahora no</button><button class="btn primary" data-act="notif">🔔 Activar</button></div>`,
+    "ios-install": `<h3>🔔 Activa las notificaciones</h3>${why}
+      <p class="small">En iPhone primero hay que <b>instalar la app</b>:</p>
+      <ol class="small steps"><li>Abre esta página en <b>Safari</b>.</li><li>Pulsa <b>Compartir</b> (el cuadrado con la flecha ⬆️).</li><li>Elige <b>“Añadir a pantalla de inicio”</b> → Añadir.</li><li><b>Abre la app desde el icono</b> del escudo y pulsa <b>Activar</b>.</li></ol>
+      <div class="acts"><button class="btn primary" data-act="close">Entendido</button></div>`,
+    denied: `<h3>🔕 Tienes las notificaciones bloqueadas</h3>${why}
+      <ol class="small steps">${isIOS() ? `<li>Abre <b>Ajustes</b> del iPhone → <b>Notificaciones</b>.</li><li>Busca <b>Game Over FC</b> y activa <b>Permitir notificaciones</b>.</li>`
+        : `<li>Mantén pulsado el icono de la app → <b>Información de la aplicación</b> (o en Chrome: el candado 🔒 junto a la dirección).</li><li><b>Notificaciones</b> → <b>Permitir</b>.</li>`}<li>Vuelve a abrir la app.</li></ol>
+      <div class="acts"><button class="btn primary" data-act="close">Entendido</button></div>`,
+  }[st];
+  openModal(body);
+}
 async function enableNotifications() {
   if (!(await isSupported().catch(() => false)) || !("Notification" in window)) {
     return toast(/iphone|ipad/i.test(navigator.userAgent) ? "En iPhone: instala la app en la pantalla de inicio y ábrela desde allí" : "Este navegador no admite notificaciones");
   }
   const perm = await Notification.requestPermission();
-  if (perm !== "granted") return toast("Permiso de notificaciones denegado");
+  if (perm !== "granted") { if ($modal.open) $modal.close(); toast("No has permitido las notificaciones"); return notifPrompt(true); }
   try {
     if (!S.swReg) S.swReg = await navigator.serviceWorker.register("./sw.js");
     await navigator.serviceWorker.ready;
-    const token = await getToken(getMessaging(fb), { vapidKey: self.VAPID_KEY, serviceWorkerRegistration: S.swReg });
-    await setDoc(doc(db, "tokens", S.uid), { token, playerId: S.me, updatedAt: serverTimestamp(), ua: navigator.userAgent.slice(0, 200) });
+    await saveToken(S.swReg);
+    if ($modal.open) $modal.close();
     toast("🔔 Notificaciones activadas");
     render();
   } catch (e) { toast("Error activando avisos: " + e.message); }
 }
 async function setupForegroundPush() {
-  if (!(await isSupported().catch(() => false))) return;
+  if (!(await isSupported().catch(() => false))) { deleteDoc(doc(db, "tokens", S.uid)).catch(() => {}); return; }
   onMessage(getMessaging(fb), (payload) => toast(`${payload.notification?.title || ""} — ${payload.notification?.body || ""}`));
-  // Refresca el token en silencio si ya hay permiso
+  // Refresca el token en silencio si ya hay permiso; si se quitó el permiso, se borra (así el admin ve la lista real)
   if ("Notification" in window && Notification.permission === "granted") {
     try {
       const reg = S.swReg || await navigator.serviceWorker.register("./sw.js");
       await navigator.serviceWorker.ready;
-      const token = await getToken(getMessaging(fb), { vapidKey: self.VAPID_KEY, serviceWorkerRegistration: reg });
-      await setDoc(doc(db, "tokens", S.uid), { token, playerId: S.me, updatedAt: serverTimestamp(), ua: navigator.userAgent.slice(0, 200) });
+      await saveToken(reg);
     } catch (e) { console.warn(e); }
+  } else {
+    deleteDoc(doc(db, "tokens", S.uid)).catch(() => {});
   }
 }
 
@@ -1340,8 +1428,8 @@ async function setupForegroundPush() {
 //  PANEL DE ADMINISTRACIÓN (solo role == "admin")
 // =====================================================================
 function viewAdmin() {
-  const sub = [["partidos", "Partidos"], ["fantasy", "Fantasy"], ["entrenos", "Entrenos"], ["clasif", "Clasificación"], ["jugadores", "Jugadores y permisos"], ["ajustes", "Ajustes"]];
-  const body = { partidos: adminMatches, fantasy: adminFantasy, entrenos: adminTrainings, clasif: adminStandings, jugadores: adminPlayers, ajustes: adminSettings }[S.adminTab]();
+  const sub = [["partidos", "Partidos"], ["avisos", "🔔 Avisos"], ["fantasy", "Fantasy"], ["entrenos", "Entrenos"], ["clasif", "Clasificación"], ["jugadores", "Jugadores y permisos"], ["ajustes", "Ajustes"]];
+  const body = { partidos: adminMatches, avisos: adminPush, fantasy: adminFantasy, entrenos: adminTrainings, clasif: adminStandings, jugadores: adminPlayers, ajustes: adminSettings }[S.adminTab]();
   return `${backToMore()}<div class="section-title"><h2>Administración</h2></div>
     <div class="subtabs">${sub.map(([k, l]) => `<button class="btn sm ${S.adminTab === k ? "on" : ""}" data-act="atab" data-tab="${k}">${l}</button>`).join("")}</div>
     ${body}`;
@@ -1364,6 +1452,37 @@ function adminTrainings() {
     <div class="card" style="padding:4px 12px">${S.trainings.map((t) => `<div class="admin-item"><div><b>${cap(fmtDay(toDate(t.date)))}</b><br>
       <span class="muted small">${esc(t.time || "")} ${t.place ? "· " + esc(t.place) : ""} · ${Object.values(t.votes || {}).filter((v) => v === "si").length} van</span></div>
       <div class="acts"><button class="btn sm" data-act="train-edit" data-id="${t.id}">Editar</button></div></div>`).join("") || `<div class="empty">Sin entrenos</div>`}</div>`;
+}
+
+function adminPush() {
+  const tk = S.tokens || {};
+  const list = sortedPlayers().filter((p) => p.uid);
+  const on = list.filter((p) => tk[p.id]);
+  const last = (S.pushReqs || [])[0];
+  const res = (pid) => {
+    if (!last) return "";
+    if (last.acks?.[pid]) return `<span class="tag ok">👀 Abierta</span>`;
+    if (last.status !== "sent") return `<span class="tag">⏳</span>`;
+    const r = last.results?.[pid];
+    return r === "ok" ? `<span class="tag ok">✅ Le llegó</span>` : r ? `<span class="tag ko">⚠️ Falló</span>` : `<span class="tag">—</span>`;
+  };
+  return `<div class="stats" style="margin-top:0">
+      <div class="stat"><div class="v">${on.length}/${list.length}</div><div class="l">Con avisos</div></div>
+      <div class="stat"><div class="v">${list.length - on.length}</div><div class="l">Sin avisos</div></div>
+      <div class="stat"><div class="v">${sortedPlayers().length - list.length}</div><div class="l">Sin entrar</div></div>
+    </div>
+    <form class="card" data-form="push" style="margin-top:12px">
+      <h3>📣 Enviar notificación</h3>
+      <label>Título</label><input name="title" maxlength="60" required value="🔔 Prueba de notificaciones">
+      <label>Mensaje</label><input name="body" maxlength="160" required value="Si te llega este aviso, ¡las notificaciones funcionan! Tócalo para confirmarlo.">
+      <p class="muted small">Se envía a todos los que tienen los avisos activados. Llega en unos minutos (lo manda la tarea automática). Después verás aquí a quién le llegó y quién la abrió.</p>
+      <div class="acts"><button class="btn primary" type="submit">📣 Enviar</button></div>
+    </form>
+    <div class="card" style="padding:4px 12px"><h3 style="margin-top:10px">👥 Jugadores</h3>
+      ${list.map((p) => { const t = tk[p.id]; return `<div class="admin-item"><div><b>${t ? "✅" : "❌"} ${esc(p.name)}</b><br><span class="muted small">${t ? `${esc(t.platform || "Móvil")} · actualizado ${toDate(t.updatedAt) ? fmtShort(toDate(t.updatedAt)) : "—"}` : "Sin notificaciones activadas"}</span></div><div class="acts">${res(p.id)}</div></div>`; }).join("")}
+      ${sortedPlayers().filter((p) => !p.uid).length ? `<p class="muted small">Aún no han entrado en la app: ${sortedPlayers().filter((p) => !p.uid).map((p) => esc(p.name)).join(", ")}</p>` : ""}
+    </div>
+    ${(S.pushReqs || []).length ? `<div class="card" style="padding:4px 12px"><h3 style="margin-top:10px">🕑 Últimos envíos</h3>${S.pushReqs.slice(0, 8).map((r) => `<div class="admin-item"><div><b>${esc(r.title)}</b><br><span class="muted small">${toDate(r.createdAt) ? fmt(toDate(r.createdAt), { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "ahora"} · ${r.status === "sent" ? `llegó a ${r.okCount ?? 0} de ${r.total ?? 0}` : "⏳ en cola"} · 👀 ${Object.keys(r.acks || {}).length} abiertas</span></div></div>`).join("")}</div>` : ""}`;
 }
 
 function adminFantasy() {
@@ -1641,6 +1760,7 @@ document.addEventListener("click", async (e) => {
       case "ctab": S.clasTab = b.dataset.tab; return render();
       case "vote": return vote(b.dataset.kind, id, b.dataset.v);
       case "notif": return enableNotifications();
+      case "notif-help": return notifPrompt(true);
       case "match": {
         return openMatchModal(id);
       }
@@ -1727,6 +1847,11 @@ document.addEventListener("submit", async (e) => {
     if (kind === "match") await saveMatch(form);
     if (kind === "date") await saveDate(form);
     if (kind === "predict") await savePrediction(form);
+    if (kind === "push") {
+      const f = Object.fromEntries(new FormData(form));
+      await setDoc(doc(collection(db, "pushRequests")), { title: f.title.trim(), body: f.body.trim(), status: "pending", by: S.me, createdAt: serverTimestamp() });
+      toast("📣 Notificación en cola: llegará en unos minutos");
+    }
     if (kind === "fine") await saveFine(form);
     if (kind === "finetypes") await saveFineTypes(form);
     if (kind === "fxadmin") await saveFxAdmin(form);

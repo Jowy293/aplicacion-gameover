@@ -55,32 +55,44 @@ def compute_deadline(match_dt, cfg):
     return match_dt if dl > match_dt else dl
 
 
-def send_push(db, title, body):
-    """Envía una notificación a todos los móviles registrados. Devuelve cuántas se entregaron."""
-    docs = list(db.collection("tokens").stream())
-    tokens = [(d.id, d.to_dict().get("token")) for d in docs if d.to_dict().get("token")]
+def send_push_detailed(db, title, body, link=None):
+    """Envía una notificación a todos los móviles registrados.
+    Devuelve {playerId: "ok" | "error: ..."} para saber a quién le ha llegado."""
+    docs = [(d.id, d.to_dict()) for d in db.collection("tokens").stream()]
+    tokens = [(uid, t["token"], t.get("playerId")) for uid, t in docs if t.get("token")]
+    results = {}
     if not tokens:
         print("  (no hay móviles con notificaciones activadas)")
-        return 0
-    sent = 0
+        return results
+    link = link or APP_URL
     for i in range(0, len(tokens), 500):
         chunk = tokens[i:i + 500]
         msg = messaging.MulticastMessage(
-            tokens=[t for _, t in chunk],
+            tokens=[t for _, t, _ in chunk],
             webpush=messaging.WebpushConfig(
                 notification=messaging.WebpushNotification(
                     title=title, body=body, icon="icons/icon-192.png", badge="icons/icon-96.png",
                 ),
-                fcm_options=messaging.WebpushFCMOptions(link=APP_URL) if APP_URL else None,
+                fcm_options=messaging.WebpushFCMOptions(link=link) if link else None,
             ),
         )
         resp = messaging.send_each_for_multicast(msg)
-        sent += resp.success_count
-        for (uid, _), r in zip(chunk, resp.responses):
-            if not r.success and isinstance(r.exception, (messaging.UnregisteredError, messaging.SenderIdMismatchError)):
-                db.collection("tokens").document(uid).delete()  # token caducado
-    print(f"  notificación enviada a {sent}/{len(tokens)} móviles")
-    return sent
+        for (uid, _, pid), r in zip(chunk, resp.responses):
+            key = pid or uid
+            if r.success:
+                results[key] = "ok"
+            else:
+                results[key] = f"error: {type(r.exception).__name__}"
+                if isinstance(r.exception, (messaging.UnregisteredError, messaging.SenderIdMismatchError)):
+                    db.collection("tokens").document(uid).delete()  # token caducado: ya no tiene avisos
+    ok = sum(1 for v in results.values() if v == "ok")
+    print(f"  notificación enviada a {ok}/{len(tokens)} móviles")
+    return results
+
+
+def send_push(db, title, body, link=None):
+    """Igual que send_push_detailed pero devuelve cuántas se entregaron."""
+    return sum(1 for v in send_push_detailed(db, title, body, link).values() if v == "ok")
 
 
 DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]

@@ -54,8 +54,19 @@ service cloud.firestore {
 
     match /tokens/{uid} {
       allow create, update: if hasUser() && request.auth.uid == uid && request.resource.data.playerId == myPlayer();
-      allow read: if false;
+      allow read: if isAdmin();   // el admin ve quién tiene los avisos activados
       allow delete: if signedIn() && (request.auth.uid == uid || isAdmin());
+    }
+
+    // Notificaciones que manda el admin (las envía la tarea automática).
+    // Cada jugador solo puede apuntar que ÉL la ha abierto (acks.<su jugador>).
+    match /pushRequests/{id} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && request.resource.data.status == 'pending';
+      allow update: if isAdmin() || (hasUser()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acks'])
+        && request.resource.data.acks.diff(resource.data.get('acks', {})).affectedKeys().hasOnly([myPlayer()]));
+      allow delete: if isAdmin();
     }
 
     match /matches/{id} {
