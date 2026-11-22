@@ -3,9 +3,11 @@
 - Hora del partido publicada / cambiada
 - Fantasy abierto a mano
 - Fotos nuevas
+- Encuesta del entreno (si GitHub se saltó la ejecución del martes)
 - Recordatorios a quien no ha votado / no ha hecho el Fantasy"""
 import push_queue
 import reminders
+import training
 from common import get_config, init
 from sync_liga import notify_fantasy, notify_pending, notify_photos
 
@@ -13,7 +15,7 @@ db = init()
 cfg = get_config(db)
 for name, fn in [("envíos del admin", lambda: push_queue.process(db)), ("partido publicado", lambda: notify_pending(db, cfg)),
                  ("Fantasy abierto", lambda: notify_fantasy(db)), ("fotos nuevas", lambda: notify_photos(db)),
-                 ("recordatorios", lambda: reminders.run(db))]:
+                 ("encuesta del entreno", lambda: training.main()), ("recordatorios", lambda: reminders.run(db))]:
     try:
         fn()
     except Exception as e:  # que un fallo no pare el resto de avisos

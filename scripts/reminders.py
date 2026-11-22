@@ -8,8 +8,11 @@ from datetime import timedelta
 
 from common import human, init, now, send_push
 
-# (horas antes del cierre, ventana en la que se puede mandar)
-STEPS = [(24, timedelta(hours=1)), (2, timedelta(hours=1))]
+# (horas antes del cierre, hasta cuándo se puede mandar ese recordatorio)
+# Ventanas amplias porque GitHub a veces se salta ejecuciones programadas:
+# el de 24 h vale mientras queden más de 12 h (así no coincide con el aviso de publicación
+# cuando el plazo es corto); el de 2 h, hasta el cierre.
+STEPS = [(24, timedelta(hours=12)), (2, timedelta(hours=2))]
 STAFF = {"Entrenador", "Fotógrafo"}
 
 
