@@ -2,7 +2,7 @@
 // Las notificaciones las muestra SIEMPRE este archivo (con la app abierta o cerrada, en Android y en iPhone),
 // sin depender de la librería de Firebase en segundo plano.
 
-const CACHE = "gofc-v18";
+const CACHE = "gofc-v19";
 const SHELL = ["./", "./index.html", "./styles.css", "./app.js", "./firebase-config.js",
   "./manifest.json", "./icons/logo.png?v=3", "./icons/icon-192.png"];
 

@@ -261,6 +261,7 @@ function startMain() {
   }, (e) => console.warn("fantasy:", e.message)));
   setupForegroundPush();
   setTimeout(() => notifPrompt(), 1500);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") setTimeout(() => notifPrompt(), 800); });
   const ack = new URLSearchParams(location.search).get("ack");
   if (ack) {
     updateDoc(doc(db, "pushRequests", ack), { [`acks.${S.me}`]: serverTimestamp() }).catch(() => {});
@@ -1388,8 +1389,10 @@ async function saveToken(reg) {
 function notifPrompt(force = false) {
   const st = notifState();
   if (st === "on" || st === "unsupported") return;
-  if (!force) { try { if (sessionStorage.getItem("gofc-notif-asked")) return; sessionStorage.setItem("gofc-notif-asked", "1"); } catch {} }
+  // Sale cada vez que se entra en la app (al abrirla o al volver tras un rato fuera); se puede cerrar
+  if (!force && Date.now() - (S.notifAskedAt || 0) < 10 * 60 * 1000) return;
   if ($modal.open) return;
+  S.notifAskedAt = Date.now();
   const why = `<p class="muted small">Te avisaremos cuando se publique la <b>hora del partido</b>, se abra la <b>encuesta del entreno</b> o el <b>Fantasy</b>, y cuando haya <b>fotos nuevas</b>.</p>`;
   const body = {
     off: `<h3>🔔 Activa las notificaciones</h3>${why}<p class="small">Pulsa <b>Activar</b> y luego <b>Permitir</b>.</p>
@@ -1403,7 +1406,7 @@ function notifPrompt(force = false) {
         : `<li>Mantén pulsado el icono de la app → <b>Información de la aplicación</b> (o en Chrome: el candado 🔒 junto a la dirección).</li><li><b>Notificaciones</b> → <b>Permitir</b>.</li>`}<li>Vuelve a abrir la app.</li></ol>
       <div class="acts"><button class="btn primary" data-act="close">Entendido</button></div>`,
   }[st];
-  openModal(body);
+  openModal(`<button class="modal-x" data-act="close" aria-label="Cerrar">✕</button>${body}`);
 }
 async function enableNotifications() {
   if (!(await isSupported().catch(() => false)) || !("Notification" in window)) {
