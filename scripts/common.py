@@ -71,6 +71,11 @@ def send_push_detailed(db, title, body, link=None, only=None):
         msg = messaging.MulticastMessage(
             tokens=[t for _, t, _ in chunk],
             webpush=messaging.WebpushConfig(
+                # prioridad alta: se entrega aunque el móvil esté en reposo o con ahorro de batería;
+                # si está apagado o sin conexión, se guarda hasta 24 h
+                headers={"Urgency": "high", "TTL": "86400"},
+                # el service worker de la app lee estos datos y muestra la notificación (Android e iPhone)
+                data={"title": title, "body": body, "link": link or ""},
                 notification=messaging.WebpushNotification(
                     title=title, body=body, icon="icons/icon-192.png", badge="icons/icon-96.png",
                 ),
