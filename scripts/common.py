@@ -55,11 +55,12 @@ def compute_deadline(match_dt, cfg):
     return match_dt if dl > match_dt else dl
 
 
-def send_push_detailed(db, title, body, link=None):
-    """Envía una notificación a todos los móviles registrados.
+def send_push_detailed(db, title, body, link=None, only=None):
+    """Envía una notificación a todos los móviles registrados (o solo a los jugadores de `only`).
     Devuelve {playerId: "ok" | "error: ..."} para saber a quién le ha llegado."""
     docs = [(d.id, d.to_dict()) for d in db.collection("tokens").stream()]
-    tokens = [(uid, t["token"], t.get("playerId")) for uid, t in docs if t.get("token")]
+    tokens = [(uid, t["token"], t.get("playerId")) for uid, t in docs
+              if t.get("token") and (only is None or t.get("playerId") in only)]
     results = {}
     if not tokens:
         print("  (no hay móviles con notificaciones activadas)")
@@ -90,9 +91,9 @@ def send_push_detailed(db, title, body, link=None):
     return results
 
 
-def send_push(db, title, body, link=None):
+def send_push(db, title, body, link=None, only=None):
     """Igual que send_push_detailed pero devuelve cuántas se entregaron."""
-    return sum(1 for v in send_push_detailed(db, title, body, link).values() if v == "ok")
+    return sum(1 for v in send_push_detailed(db, title, body, link, only).values() if v == "ok")
 
 
 DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]

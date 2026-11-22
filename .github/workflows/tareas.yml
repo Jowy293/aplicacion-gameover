@@ -4,7 +4,7 @@ name: Tareas automáticas
 on:
   schedule:
     - cron: "17 * * * *"          # cada hora: avisos pendientes (hora del partido, Fantasy, fotos)
-    - cron: "*/5 * * * *"         # cada 5 min: notificaciones que manda el admin desde la app
+    - cron: "*/5 * * * *"         # cada 5 min: avisos (admin, partido, Fantasy, fotos) y recordatorios a quien no ha votado
     - cron: "*/15 7-21 * * 3"     # los miércoles cada 15 min: detectar la hora del partido cuanto antes
     - cron: "0 8 * * 2"           # martes 10:00 Madrid en verano (UTC+2): encuesta del entreno
     - cron: "0 9 * * 2"           # martes 10:00 Madrid en invierno (UTC+1): encuesta del entreno
@@ -15,6 +15,11 @@ on:
         type: choice
         options: [sync, entreno, inicializar, cargar-partidos, cargar-clasificacion, publicar-reglas, ajustes-entreno, migrar, avisos, prueba-notificacion]
         default: sync
+
+# una tarea detrás de otra (para no mandar avisos repetidos)
+concurrency:
+  group: tareas
+  cancel-in-progress: false
 
 jobs:
   run:
@@ -60,7 +65,7 @@ jobs:
       - if: steps.t.outputs.tarea == 'migrar'
         run: python migrate.py
       - if: steps.t.outputs.tarea == 'avisos'
-        run: python push_queue.py
+        run: python avisos.py
       - if: steps.t.outputs.tarea == 'prueba-notificacion'
         run: python test_push.py
 
