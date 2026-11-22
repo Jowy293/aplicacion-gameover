@@ -1011,25 +1011,44 @@ function viewMore() {
 const backToMore = () => `<button class="btn sm ghost" style="margin-top:10px" data-act="tab" data-tab="mas">‹ Más</button>`;
 
 // =====================================================================
-//  FOTOS: un álbum por partido. Las sube el fotógrafo (o un admin).
-//  Se guardan en la base de datos (gratis): miniatura en photos/{id} y la foto
-//  grande (2048 px) troceada en photos/{id}/chunks/{n}.
+//  FOTOS Y VÍDEOS: un álbum por partido. Los sube el fotógrafo (o un admin).
+//  Se guardan en la base de datos (gratis, 1 GB en total): miniatura en photos/{id} y el archivo
+//  (foto de 2048 px o vídeo comprimido) troceado en photos/{id}/chunks/{n}.
 // =====================================================================
-const CHUNK = 700000;
+const CHUNK = 700000;               // caracteres por trozo (cabe de sobra en un documento)
+const FREE_BYTES = 1024 * 1024 * 1024; // espacio gratis de la base de datos
+const VIDEO_MAX_SECONDS = 120;
+const VIDEO_MAX_BYTES = 30 * 1024 * 1024;
 const photoEvents = () => S.matches.filter((m) => matchStarted(m) || S.albums[m.id]?.count).slice().reverse();
+const mediaLabel = (a) => {
+  const v = a?.videos || 0, f = (a?.count || 0) - v;
+  const parts = [];
+  if (f) parts.push(`${f} ${f === 1 ? "foto" : "fotos"}`);
+  if (v) parts.push(`${v} ${v === 1 ? "vídeo" : "vídeos"}`);
+  return parts.join(" · ") || "sin fotos";
+};
+const usedBytes = () => Object.values(S.albums).reduce((t, a) => t + (a.bytes || (a.count || 0) * 450000), 0);
+const mb = (n) => `${Math.round(n / 1048576)} MB`;
+const fmtDur = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 function viewPhotos() {
   if (S.albumOpen) return viewAlbum(S.albumOpen);
   const ev = photoEvents();
-  return `<div class="section-title"><h2>📷 Fotos</h2><span class="muted small">${Object.values(S.albums).reduce((a, x) => a + (x.count || 0), 0)} fotos</span></div>
-    ${isPhotographer() ? `<p class="muted small">Elige un partido para subir sus fotos. Al subirlas se avisa a todo el equipo.</p>` : ""}
+  const all = Object.values(S.albums);
+  return `<div class="section-title"><h2>📷 Fotos y vídeos</h2><span class="muted small">${mediaLabel({ count: all.reduce((a, x) => a + (x.count || 0), 0), videos: all.reduce((a, x) => a + (x.videos || 0), 0) })}</span></div>
+    ${isPhotographer() ? `<p class="muted small">Elige un partido para subir sus fotos y vídeos. Al subirlos se avisa a todo el equipo.</p>${storageBar()}` : ""}
     ${ev.length ? `<div class="albums">${ev.map((m) => {
       const a = S.albums[m.id]; const d = toDate(m.date);
       return `<div class="album" data-act="album" data-id="${m.id}">
-        <div class="album-cover">${a?.cover ? `<img src="${a.cover}" alt="">` : crestImg(m.crest, "lg")}</div>
+        <div class="album-cover">${a?.cover ? `<img src="${a.cover}" alt="">` : crestImg(m.crest, "lg")}${a?.videos ? `<span class="vbadge">▶ ${a.videos}</span>` : ""}</div>
         <div class="album-info"><b>${m.isHome !== false ? "vs" : "@"} ${esc(m.rival)}</b>
-        <span class="muted small">${d ? fmtShort(d) : ""}${resultOf(m) ? ` · ${m.golesGO}-${m.golesRival}` : ""} · ${a?.count ? `${a.count} ${a.count === 1 ? "foto" : "fotos"}` : "sin fotos"}</span></div>
+        <span class="muted small">${d ? fmtShort(d) : ""}${resultOf(m) ? ` · ${m.golesGO}-${m.golesRival}` : ""} · ${mediaLabel(a)}</span></div>
       </div>`;
     }).join("")}</div>` : `<div class="card empty">Todavía no hay partidos jugados.</div>`}`;
+}
+function storageBar() {
+  const used = usedBytes(), pct = Math.min(100, (used / FREE_BYTES) * 100);
+  return `<div class="storage"><div class="small">💾 Espacio usado: <b>${mb(used)}</b> de ${mb(FREE_BYTES)} gratis</div>
+    <div class="goal-bar"><div class="goal-paid" style="width:${pct}%;${pct > 85 ? "background:var(--ko)" : ""}"></div></div></div>`;
 }
 function viewAlbum(mid) {
   const m = S.matches.find((x) => x.id === mid);
@@ -1039,11 +1058,12 @@ function viewAlbum(mid) {
   const up = S.uploading;
   return `<button class="btn sm ghost" style="margin-top:10px" data-act="album-back">‹ Eventos</button>
     <div class="section-title"><h2>${m.isHome !== false ? "vs" : "@"} ${esc(m.rival)}</h2><span class="muted small">${toDate(m.date) ? fmtShort(toDate(m.date)) : ""}</span></div>
-    ${isPhotographer() ? `<label class="btn primary block upl ${up ? "busy" : ""}">${up ? `⏳ Subiendo ${up.done}/${up.total}…` : "📤 Subir fotos"}
-      <input type="file" accept="image/*" multiple data-upload="${mid}" ${up ? "disabled" : ""} hidden></label>` : ""}
-    ${!list ? `<div class="loading"><div class="ball"></div>Cargando fotos…</div>`
-      : list.length ? `<p class="muted small">Toca una foto para verla en grande y descargarla.</p><div class="photo-grid">${list.map((ph, i) => `<button class="ph" data-act="photo" data-id="${mid}" data-i="${i}"><img src="${ph.thumb}" alt="Foto ${i + 1}" loading="lazy"></button>`).join("")}</div>`
-      : `<div class="card empty">Aún no hay fotos de este partido.</div>`}`;
+    ${isPhotographer() ? `<label class="btn primary block upl ${up ? "busy" : ""}">${up ? `⏳ ${esc(up.label || `Subiendo ${up.done}/${up.total}…`)}` : "📤 Subir fotos y vídeos"}
+      <input type="file" accept="image/*,video/*" multiple data-upload="${mid}" ${up ? "disabled" : ""} hidden></label>
+      ${up ? `<p class="muted small" style="text-align:center">No cierres la app ni cambies de pantalla hasta que termine.</p>` : `<p class="muted small">Vídeos de hasta ${VIDEO_MAX_SECONDS / 60} minutos. Si son grandes se comprimen en el móvil (tarda lo que dura el vídeo).</p>`}` : ""}
+    ${!list ? `<div class="loading"><div class="ball"></div>Cargando…</div>`
+      : list.length ? `<p class="muted small">Toca una foto o un vídeo para verlo en grande y descargarlo.</p><div class="photo-grid">${list.map((ph, i) => `<button class="ph" data-act="photo" data-id="${mid}" data-i="${i}"><img src="${ph.thumb}" alt="${ph.type === "video" ? "Vídeo" : "Foto"} ${i + 1}" loading="lazy">${ph.type === "video" ? `<span class="play">▶</span><span class="dur">${fmtDur(ph.duration || 0)}</span>` : ""}</button>`).join("")}</div>`
+      : `<div class="card empty">Aún no hay fotos ni vídeos de este partido.</div>`}`;
 }
 async function loadAlbum(mid) {
   if (S.loadingAlbum === mid) return;
@@ -1065,45 +1085,140 @@ async function toJpeg(file, max, quality) {
   c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);
   return { url: c.toDataURL("image/jpeg", quality), w: c.width, h: c.height };
 }
+// ---- vídeo ----
+function loadVideo(file) {
+  return new Promise((ok, ko) => {
+    const v = document.createElement("video");
+    v.preload = "auto"; v.playsInline = true; v.setAttribute("playsinline", ""); v.src = URL.createObjectURL(file);
+    v.onloadedmetadata = async () => {
+      // algunos vídeos (WebM de Android) no traen la duración: saltar al final para que el navegador la calcule
+      if (!isFinite(v.duration)) {
+        await new Promise((r) => { v.ondurationchange = () => { if (isFinite(v.duration)) r(); }; v.currentTime = 1e7; setTimeout(r, 5000); });
+        v.ondurationchange = null;
+        v.currentTime = 0;
+      }
+      ok(v);
+    };
+    v.onerror = () => ko(new Error("este formato de vídeo no se puede leer en este móvil"));
+  });
+}
+async function videoThumb(v) {
+  await new Promise((ok) => { v.onseeked = ok; v.currentTime = Math.min(0.5, (v.duration || 1) / 2); setTimeout(ok, 3000); });
+  const k = Math.min(1, 480 / Math.max(v.videoWidth, v.videoHeight));
+  const c = document.createElement("canvas"); c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k);
+  c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+  return c.toDataURL("image/jpeg", 0.7);
+}
+const canCompress = () => typeof MediaRecorder !== "undefined" && !!HTMLCanvasElement.prototype.captureStream;
+// Comprime el vídeo reproduciéndolo dentro de la app y grabándolo a 720p (tarda lo que dura el vídeo)
+async function compressVideo(v, onProgress) {
+  const k = Math.min(1, 1280 / Math.max(v.videoWidth, v.videoHeight));
+  const c = document.createElement("canvas");
+  c.width = Math.max(2, Math.round((v.videoWidth * k) / 2) * 2); c.height = Math.max(2, Math.round((v.videoHeight * k) / 2) * 2);
+  const ctx = c.getContext("2d");
+  const stream = c.captureStream(30);
+  let ac = null;
+  try {
+    ac = new (window.AudioContext || window.webkitAudioContext)();
+    await ac.resume();
+    const dest = ac.createMediaStreamDestination();
+    ac.createMediaElementSource(v).connect(dest); // el sonido va a la grabación, no a los altavoces
+    dest.stream.getAudioTracks().forEach((t) => stream.addTrack(t));
+  } catch { v.muted = true; }
+  const mime = ["video/mp4;codecs=avc1.42E01E,mp4a.40.2", "video/mp4", "video/webm;codecs=vp8,opus", "video/webm"].find((t) => MediaRecorder.isTypeSupported?.(t)) || "";
+  const rec = new MediaRecorder(stream, { ...(mime ? { mimeType: mime } : {}), videoBitsPerSecond: 1800000, audioBitsPerSecond: 96000 });
+  const parts = [];
+  rec.ondataavailable = (e) => { if (e.data.size) parts.push(e.data); };
+  const stopped = new Promise((ok) => { rec.onstop = ok; });
+  v.currentTime = 0;
+  await new Promise((ok) => { v.onseeked = ok; setTimeout(ok, 1500); });
+  rec.start(1000);
+  try { await v.play(); } catch { v.muted = true; await v.play(); }
+  const timer = setInterval(() => { ctx.drawImage(v, 0, 0, c.width, c.height); onProgress(v.currentTime / v.duration); }, 33);
+  await new Promise((ok) => { v.onended = ok; });
+  clearInterval(timer); rec.stop(); await stopped;
+  ac?.close?.();
+  return new Blob(parts, { type: (rec.mimeType || mime || "video/webm").split(";")[0] });
+}
+const blobToB64 = (blob) => new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1]); r.onerror = ko; r.readAsDataURL(blob); });
+// Guarda un archivo troceado: primero los trozos (en tandas) y al final la ficha, para que no aparezca a medias
+async function saveMedia(mid, b64, meta, onProgress) {
+  const parts = []; for (let i = 0; i < b64.length; i += CHUNK) parts.push(b64.slice(i, i + CHUNK));
+  const ref = doc(collection(db, "photos"));
+  try {
+    for (let i = 0; i < parts.length; i += 10) {
+      const bt = writeBatch(db);
+      parts.slice(i, i + 10).forEach((d, j) => bt.set(doc(db, "photos", ref.id, "chunks", String(i + j)), { d }));
+      await bt.commit();
+      onProgress?.(Math.min(1, (i + 10) / parts.length));
+    }
+    const bt = writeBatch(db);
+    bt.set(ref, { matchId: mid, ...meta, n: parts.length, bytes: b64.length, by: S.me, createdAt: serverTimestamp() });
+    bt.set(doc(db, "albums", mid), { count: increment(1), bytes: increment(b64.length), updatedAt: serverTimestamp(),
+      ...(meta.type === "video" ? { videos: increment(1) } : {}), ...(S.albums[mid]?.cover ? {} : { cover: meta.thumb }) }, { merge: true });
+    await bt.commit();
+  } catch (e) {
+    // limpiar trozos sueltos si algo falló
+    const bt = writeBatch(db); parts.forEach((_, k) => bt.delete(doc(db, "photos", ref.id, "chunks", String(k)))); bt.commit().catch(() => {});
+    throw e;
+  }
+}
 async function uploadPhotos(mid, files) {
-  files = [...files].filter((f) => f.type.startsWith("image/"));
+  files = [...files].filter((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
   if (!files.length) return;
   S.uploading = { done: 0, total: files.length }; render();
-  let ok = 0;
+  let okF = 0, okV = 0;
+  const setLabel = (t) => { S.uploading.label = t; render(); };
   for (const f of files) {
+    const n = `${S.uploading.done + 1}/${files.length}`;
     try {
-      const big = await toJpeg(f, 2048, 0.85);
-      const thumb = await toJpeg(f, 480, 0.7);
-      const b64 = big.url.split(",")[1];
-      const parts = []; for (let i = 0; i < b64.length; i += CHUNK) parts.push(b64.slice(i, i + CHUNK));
-      const ref = doc(collection(db, "photos"));
-      const bt = writeBatch(db);
-      parts.forEach((d, i) => bt.set(doc(db, "photos", ref.id, "chunks", String(i)), { d }));
-      bt.set(ref, { matchId: mid, thumb: thumb.url, w: big.w, h: big.h, n: parts.length, by: S.me, createdAt: serverTimestamp() });
-      bt.set(doc(db, "albums", mid), { count: increment(1), updatedAt: serverTimestamp(), ...(S.albums[mid]?.cover ? {} : { cover: thumb.url }) }, { merge: true });
-      await bt.commit();
-      ok++;
-    } catch (e) { toast(`Error con ${f.name}: ${e.message}`); }
+      if (f.type.startsWith("image/")) {
+        setLabel(`Subiendo ${n}…`);
+        const big = await toJpeg(f, 2048, 0.85);
+        const thumb = await toJpeg(f, 480, 0.7);
+        await saveMedia(mid, big.url.split(",")[1], { type: "photo", mime: "image/jpeg", thumb: thumb.url, w: big.w, h: big.h });
+        okF++;
+      } else {
+        setLabel(`Preparando vídeo ${n}…`);
+        const v = await loadVideo(f);
+        if (isFinite(v.duration) && v.duration > VIDEO_MAX_SECONDS + 1) throw new Error(`dura ${fmtDur(v.duration)}; el máximo son ${VIDEO_MAX_SECONDS / 60} minutos. Recórtalo en la galería del móvil.`);
+        const thumb = await videoThumb(v);
+        let blob = f;
+        if (f.size > 8 * 1024 * 1024 && canCompress()) {
+          blob = await compressVideo(v, (p) => setLabel(`Comprimiendo vídeo ${n}… ${Math.round(p * 100)}%`));
+        }
+        if (blob.size > VIDEO_MAX_BYTES) throw new Error(`es demasiado grande (${mb(blob.size)}). Recórtalo o grábalo en menos calidad.`);
+        if (usedBytes() + blob.size * 1.37 > FREE_BYTES) throw new Error("no queda espacio gratis. Borra fotos o vídeos antiguos.");
+        const b64 = await blobToB64(blob);
+        await saveMedia(mid, b64, { type: "video", mime: blob.type || f.type || "video/mp4", thumb, w: v.videoWidth, h: v.videoHeight, duration: isFinite(v.duration) ? Math.round(v.duration) : 0 },
+          (p) => setLabel(`Subiendo vídeo ${n}… ${Math.round(p * 100)}%`));
+        okV++;
+      }
+    } catch (e) { toast(`No se pudo subir ${f.name}: ${e.message}`); }
     S.uploading.done++; render();
   }
   S.uploading = null; S.photos.delete(mid);
-  toast(`📷 ${ok} ${ok === 1 ? "foto subida" : "fotos subidas"}. Se avisará al equipo.`);
+  const msg = [okF && `${okF} ${okF === 1 ? "foto" : "fotos"}`, okV && `${okV} ${okV === 1 ? "vídeo" : "vídeos"}`].filter(Boolean).join(" y ");
+  if (msg) toast(`📷 Subido: ${msg}. Se avisará al equipo.`);
   loadAlbum(mid);
 }
 async function fullPhotoUrl(ph) {
   if (S.fullCache.has(ph.id)) return S.fullCache.get(ph.id);
   const snap = await getDocs(collection(db, "photos", ph.id, "chunks"));
   const b64 = snap.docs.sort((a, b) => +a.id - +b.id).map((d) => d.data().d).join("");
-  const blob = await (await fetch("data:image/jpeg;base64," + b64)).blob();
-  const url = URL.createObjectURL(blob);
+  const bin = atob(b64); const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const url = URL.createObjectURL(new Blob([bytes], { type: ph.mime || "image/jpeg" }));
   S.fullCache.set(ph.id, url);
   return url;
 }
 async function openPhoto(mid, i) {
   const list = S.photos.get(mid) || []; const ph = list[i]; if (!ph) return;
   S.viewer = { mid, i };
+  const isV = ph.type === "video";
   openModal(`<div class="viewer">
-    <div class="viewer-img"><img src="${ph.thumb}" alt="" id="vimg"><div class="viewer-load">Cargando foto…</div></div>
+    <div class="viewer-img">${isV ? `<video id="vvid" controls playsinline poster="${ph.thumb}"></video>` : `<img src="${ph.thumb}" alt="" id="vimg">`}
+      <div class="viewer-load">${isV ? `Cargando vídeo (${mb(ph.bytes * 0.75 || 0)})…` : "Cargando foto…"}</div></div>
     <div class="viewer-bar">
       <button class="btn sm" data-act="photo" data-id="${mid}" data-i="${(i - 1 + list.length) % list.length}" ${list.length < 2 ? "disabled" : ""}>‹</button>
       <span class="muted small">${i + 1} / ${list.length}</span>
@@ -1116,34 +1231,45 @@ async function openPhoto(mid, i) {
     </div></div>`);
   try {
     const url = await fullPhotoUrl(ph);
-    if (S.viewer?.mid === mid && S.viewer?.i === i) { const im = $modal.querySelector("#vimg"); if (im) im.src = url; $modal.querySelector(".viewer-load")?.remove(); }
-  } catch (e) { toast("No se pudo cargar la foto: " + e.message); }
+    if (S.viewer?.mid === mid && S.viewer?.i === i) {
+      const el = $modal.querySelector(isV ? "#vvid" : "#vimg"); if (el) el.src = url;
+      $modal.querySelector(".viewer-load")?.remove();
+    }
+  } catch (e) { toast("No se pudo cargar: " + e.message); }
 }
+const extOf = (mime) => ({ "video/mp4": "mp4", "video/webm": "webm", "video/quicktime": "mov" }[mime] || (String(mime).startsWith("video/") ? "mp4" : "jpg"));
 async function downloadPhoto(mid, i) {
   const ph = (S.photos.get(mid) || [])[i]; const m = S.matches.find((x) => x.id === mid);
+  toast("Preparando descarga…");
   const url = await fullPhotoUrl(ph);
   const blob = await (await fetch(url)).blob();
-  const name = `GameOverFC_${slug(m?.rival || "partido")}_${i + 1}.jpg`;
-  const file = new File([blob], name, { type: "image/jpeg" });
-  // iPhone: menú de compartir → "Guardar imagen". Android/ordenador: descarga directa.
+  const mime = ph.mime || "image/jpeg";
+  const name = `GameOverFC_${slug(m?.rival || "partido")}_${i + 1}.${extOf(mime)}`;
+  const file = new File([blob], name, { type: mime });
+  // iPhone: menú de compartir → "Guardar imagen/vídeo". Android/ordenador: descarga directa.
   if (/iphone|ipad|ipod/i.test(navigator.userAgent) && navigator.canShare?.({ files: [file] })) {
     try { await navigator.share({ files: [file], title: "Game Over FC" }); return; } catch (e) { if (e.name === "AbortError") return; }
   }
   const a = document.createElement("a"); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
-  toast("⬇️ Foto descargada");
+  toast(ph.type === "video" ? "⬇️ Vídeo descargado" : "⬇️ Foto descargada");
 }
 async function deletePhoto(mid, i) {
   const list = S.photos.get(mid) || []; const ph = list[i]; if (!ph) return;
-  if (!(await confirmBox("¿Borrar esta foto?", "Desaparecerá del álbum para todos."))) return;
+  const isV = ph.type === "video";
+  if (!(await confirmBox(isV ? "¿Borrar este vídeo?" : "¿Borrar esta foto?", "Desaparecerá del álbum para todos."))) return;
+  const keys = Array.from({ length: ph.n || 1 }, (_, k) => k);
+  for (let i0 = 0; i0 < keys.length; i0 += 400) {
+    const bt = writeBatch(db); keys.slice(i0, i0 + 400).forEach((k) => bt.delete(doc(db, "photos", ph.id, "chunks", String(k)))); await bt.commit();
+  }
   const bt = writeBatch(db);
-  for (let k = 0; k < (ph.n || 1); k++) bt.delete(doc(db, "photos", ph.id, "chunks", String(k)));
   bt.delete(doc(db, "photos", ph.id));
   const rest = list.filter((x) => x.id !== ph.id);
   if (!rest.length) bt.delete(doc(db, "albums", mid));
-  else bt.set(doc(db, "albums", mid), { count: increment(-1), ...(S.albums[mid]?.cover === ph.thumb ? { cover: rest[0].thumb } : {}) }, { merge: true });
+  else bt.set(doc(db, "albums", mid), { count: increment(-1), bytes: increment(-(ph.bytes || 0)), ...(isV ? { videos: increment(-1) } : {}),
+    ...(S.albums[mid]?.cover === ph.thumb ? { cover: rest[0].thumb } : {}) }, { merge: true });
   await bt.commit();
   S.photos.set(mid, rest);
-  toast("Foto borrada");
+  toast(isV ? "Vídeo borrado" : "Foto borrada");
   render();
 }
 

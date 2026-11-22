@@ -265,17 +265,26 @@ def notify_photos(db):
         count, notified = a.get("count", 0), a.get("notifiedCount", 0)
         if count <= notified:
             if count < notified:
-                snap.reference.update({"notifiedCount": count})  # se borraron fotos
+                snap.reference.update({"notifiedCount": count, "notifiedVideos": a.get("videos", 0)})  # se borraron fotos
             continue
         upd = a.get("updatedAt")
         if upd and (now() - upd).total_seconds() < 10 * 60:
             continue  # está subiendo todavía: esperar a que termine la tanda
         m = matches.get(snap.id, {})
         nuevas = count - notified
-        body = f"{nuevas} {'foto nueva' if nuevas == 1 else 'fotos nuevas'} del partido contra {m.get('rival', 'el rival')}. ¡Entra a verlas y descárgatelas!"
+        vids = max(0, a.get("videos", 0) - a.get("notifiedVideos", 0))
+        fotos = max(0, nuevas - vids)
+        partes = []
+        if fotos:
+            partes.append(f"{fotos} {'foto nueva' if fotos == 1 else 'fotos nuevas'}")
+        if vids:
+            partes.append(f"{vids} {'vídeo nuevo' if vids == 1 else 'vídeos nuevos'}")
+        que = " y ".join(partes) or f"{nuevas} archivos nuevos"
+        body = f"{que[0].upper() + que[1:]} del partido contra {m.get('rival', 'el rival')}. ¡Entra a verlos y descárgatelos!"
+        title = "🎬 ¡Nuevos vídeos del partido!" if vids and not fotos else "📷 ¡Nuevas fotos del partido!" if not vids else "📷🎬 ¡Fotos y vídeos del partido!"
         print(f"Fotos: {body}")
-        send_push(db, "📷 ¡Nuevas fotos del partido!", body)
-        snap.reference.update({"notifiedCount": count})
+        send_push(db, title, body)
+        snap.reference.update({"notifiedCount": count, "notifiedVideos": a.get("videos", 0)})
 
 
 def main():
