@@ -87,6 +87,10 @@ Enlace: **https://jowy293.github.io/aplicacion-gameover/**
 - **Clasificación de la liga**: Admin → Clasificación. Abre la web de la liga, *Seleccionar todo* → *Copiar*, pégalo y pulsa **Actualizar**.
 - **Entrenos**: se crean solos los martes. Puedes crear, editar o borrar encuestas en Admin → Entrenos, y cambiar la hora o el lugar en Ajustes.
 - **Jugadores**: Admin → Jugadores y permisos. Editar nombre, dorsal y nombre completo; **goles y tarjetas anteriores** (de antes de usar la app); añadir o borrar jugadores; **Liberar** un móvil; **Hacer admin / Quitar admin**. Siempre queda al menos un admin.
+- **Fotos** (pestaña 📷): el fotógrafo (**GAIZKA**) o un admin entra en el partido → **📤 Subir fotos** (puede elegir muchas a la vez). Se reducen a 2048 px para que quepan gratis, y en menos de una hora llega un aviso a todos. Los jugadores ven las miniaturas, tocan la que quieran y pulsan **⬇️ Descargar** (en iPhone se abre el menú de compartir → *Guardar imagen*). El fotógrafo o un admin pueden borrar fotos (🗑️).
+  - Para que otra persona pueda subir fotos: Admin → Jugadores → Editar → Posición **Fotógrafo**.
+- **Multas** (Más → 💸 Multas): **➕ Poner multa** (jugador, motivo, precio, fecha y nota), **✓ Pagada** / **↩︎ Pendiente**, **Editar** o **🗑️ Quitar**. En **⚙️ Tipos y precios** cambias el precio o el nombre de cada tipo, añades o quitas tipos, y puedes aplicar los precios nuevos a las multas sin pagar. Cada jugador ve sus multas en su perfil.
+- **Crear partido**: botón **➕ Crear partido** en la pestaña Partidos (también en Admin → Partidos).
 - **Valoraciones**: son **anónimas**. Ni el admin ve quién puso cada nota desde la app.
 
 ---

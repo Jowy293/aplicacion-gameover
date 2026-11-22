@@ -276,8 +276,40 @@ textarea { resize: vertical; }
 .fxb.off { background: rgba(255,93,108,.18); color: var(--ko); }
 
 /* Interfaz más estable */
-.tabs button { transition: color .15s; }
 dialog[open] { animation: fadeIn .14s ease-out; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 .re-head select, .stepper input { font-size: 16px; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* Más */
+.more-item { display: flex; align-items: center; gap: 14px; cursor: pointer; }
+.more-item .mi-ic { font-size: 28px; width: 40px; text-align: center; }
+.more-item > div { flex: 1; }
+.more-item .mi-go { font-size: 26px; color: var(--muted); }
+
+/* Fotos */
+.albums { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.album { background: var(--card); border: 1px solid var(--card-b); border-radius: 14px; overflow: hidden; cursor: pointer; }
+.album-cover { aspect-ratio: 4 / 3; background: rgba(0,0,0,.35); display: grid; place-items: center; overflow: hidden; }
+.album-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.album-info { padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+.photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.photo-grid .ph { padding: 0; border: 0; background: rgba(0,0,0,.3); aspect-ratio: 1; border-radius: 6px; overflow: hidden; cursor: pointer; }
+.photo-grid .ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.upl { display: block; text-align: center; margin-bottom: 12px; cursor: pointer; }
+.upl.busy { opacity: .7; cursor: progress; }
+.viewer-img { position: relative; background: #000; border-radius: 12px; overflow: hidden; display: grid; place-items: center; min-height: 200px; }
+.viewer-img img { max-width: 100%; max-height: 65vh; display: block; }
+.viewer-load { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.6); padding: 4px 10px; border-radius: 99px; font-size: 12px; }
+.viewer-bar { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+
+/* Multas */
+.fine { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; padding: 10px 12px; margin-bottom: 8px; background: var(--card); border: 1px solid var(--card-b); border-radius: 12px; }
+.fine.paid { opacity: .65; }
+.fine-main { display: flex; flex-direction: column; gap: 2px; }
+.fine-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.fine-price { font-family: "Bebas Neue", sans-serif; font-size: 22px; color: var(--gold); }
+.fine-acts { grid-column: 1 / -1; display: flex; gap: 6px; justify-content: flex-end; }
+.card .fine { background: rgba(0,0,0,.25); }
+.ft-row { display: grid; grid-template-columns: 1fr 80px auto; gap: 6px; margin-bottom: 6px; }
+.txt-ko { color: var(--ko); } .txt-ok { color: var(--ok); }

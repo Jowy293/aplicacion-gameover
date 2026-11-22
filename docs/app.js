@@ -4,7 +4,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
-  getFirestore, doc, getDoc, collection, collectionGroup, onSnapshot, runTransaction, updateDoc, setDoc,
+  getFirestore, doc, getDoc, getDocs, query, where, increment, collection, collectionGroup, onSnapshot, runTransaction, updateDoc, setDoc,
   deleteDoc, writeBatch, serverTimestamp, Timestamp, deleteField,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getMessaging, getToken, onMessage, isSupported } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
@@ -26,7 +26,7 @@ const db = getFirestore(fb);
 const S = {
   uid: null, me: null, players: new Map(), matches: [], trainings: [],
   cfg: { pollWeekday: 3, pollHour: 20, trainingTime: "20:00", trainingOpenHour: 10, trainingPlace: "", trainingAuto: true },
-  loaded: {}, clas: null, ratings: new Map(), myKeys: {}, preds: new Map(), tab: "partidos", adminTab: "partidos", unsub: [], swReg: null,
+  loaded: {}, albums: {}, photos: new Map(), fullCache: new Map(), fines: [], fineTypes: null, clas: null, ratings: new Map(), myKeys: {}, preds: new Map(), tab: "partidos", adminTab: "partidos", unsub: [], swReg: null,
 };
 
 // ---------- utilidades ----------
@@ -50,8 +50,12 @@ function toast(msg) {
 }
 const me = () => S.players.get(S.me);
 const isAdmin = () => me()?.role === "admin";
+// Staff = no juegan (entrenador y fotógrafo): no salen en valoraciones, Fantasy ni goleadores
+const STAFF = ["Entrenador", "Fotógrafo"];
+const isStaff = (p) => STAFF.includes(p?.position);
+const isPhotographer = () => me()?.position === "Fotógrafo" || isAdmin();
 const sortedPlayers = () => [...S.players.values()].sort((a, b) =>
-  (a.position === "Entrenador") - (b.position === "Entrenador") || (parseInt(a.number) || 999) - (parseInt(b.number) || 999));
+  isStaff(a) - isStaff(b) || (a.position === "Fotógrafo") - (b.position === "Fotógrafo") || (parseInt(a.number) || 999) - (parseInt(b.number) || 999));
 
 // Cierre de votación: día/hora configurados de la semana del partido (por defecto miércoles 20:00).
 // Si el partido es antes de ese momento, la votación cierra al empezar el partido.
@@ -75,7 +79,7 @@ function countdown(dl) {
 let jid = 0;
 function jersey(p, { size = 200 } = {}) {
   const id = "j" + (++jid);
-  const coach = p.position === "Entrenador";
+  const coach = isStaff(p);
   const name = String(p.name || "").toUpperCase();
   const num = String(p.number ?? "");
   const nameSize = Math.min(26, 170 / Math.max(4, name.length * 0.56));
@@ -110,7 +114,7 @@ function jersey(p, { size = 200 } = {}) {
     stroke="${coach ? "none" : "#fff"}" stroke-width="3" paint-order="stroke">${esc(name)}</text>
   <text x="100" y="${coach ? 160 : 168}" text-anchor="middle" font-family="Bebas Neue, Impact, sans-serif" font-size="${numSize}" fill="${ink}"
     stroke="${coach ? "none" : "#fff"}" stroke-width="5" paint-order="stroke">${esc(num)}</text>
-  ${coach ? `<text x="100" y="192" text-anchor="middle" font-family="Bebas Neue, sans-serif" font-size="16" fill="#d4af37">ENTRENADOR</text>` : ""}
+  ${coach ? `<text x="100" y="192" text-anchor="middle" font-family="Bebas Neue, sans-serif" font-size="16" fill="#d4af37">${p.position === "Fotógrafo" ? "FOTÓGRAFO" : "ENTRENADOR"}</text>` : ""}
 </svg>`;
 }
 
@@ -221,6 +225,19 @@ function startMain() {
     S.ratings = map;
     render(); refreshMatchModal();
   }, (e) => console.warn("valoraciones:", e.message)));
+  // Fotos: albums/{partido} = { count, cover, updatedAt } (las fotos se cargan al abrir el álbum)
+  S.unsub.push(onSnapshot(collection(db, "albums"), (snap) => {
+    S.albums = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()]));
+    for (const id of S.photos.keys()) if ((S.albums[id]?.count || 0) !== S.photos.get(id).length) S.photos.delete(id); // recargar si cambió
+    if (S.tab === "fotos" && S.albumOpen && !S.photos.has(S.albumOpen)) loadAlbum(S.albumOpen);
+    render();
+  }, (e) => console.warn("fotos:", e.message)));
+  // Multas
+  S.unsub.push(onSnapshot(collection(db, "fines"), (snap) => {
+    S.fines = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (toDate(b.date) ?? 0) - (toDate(a.date) ?? 0));
+    render();
+  }, (e) => console.warn("multas:", e.message)));
+  S.unsub.push(onSnapshot(doc(db, "config", "fines"), (d) => { S.fineTypes = d.exists() ? d.data().types || [] : null; render(); }));
   // Fantasy: matches/{partido}/predictions/{jugador}
   S.unsub.push(onSnapshot(collectionGroup(db, "predictions"), (snap) => {
     const map = new Map();
@@ -237,10 +254,10 @@ function startMain() {
 }
 
 function renderTabs() {
-  const tabs = [["partidos", "⚽", "Partidos"], ["entrenos", "🏃", "Entrenos"], ["fantasy", "🎯", "Fantasy"], ["clasif", "🏆", "Clasif."], ["perfil", "👕", "Perfil"]];
-  if (isAdmin()) tabs.push(["admin", "🛠️", "Admin"]);
+  const tabs = [["partidos", "⚽", "Partidos"], ["entrenos", "🏃", "Entrenos"], ["fantasy", "🎯", "Fantasy"], ["fotos", "📷", "Fotos"], ["clasif", "🏆", "Clasif."], ["mas", "☰", "Más"]];
+  const inMore = ["mas", "perfil", "multas", "admin"].includes(S.tab);
   $tabs.classList.remove("hidden");
-  morph($tabs, tabs.map(([k, ic, l]) => `<button class="${S.tab === k ? "on" : ""}" data-act="tab" data-tab="${k}"><span class="ic">${ic}</span>${l}</button>`).join(""));
+  morph($tabs, tabs.map(([k, ic, l]) => `<button class="${S.tab === k || (k === "mas" && inMore) ? "on" : ""}" data-act="tab" data-tab="${k}"><span class="ic">${ic}</span>${l}</button>`).join(""));
 }
 
 // ---------- pintado sin saltos ----------
@@ -278,7 +295,7 @@ function paint() {
   if (!S.me) return;
   if (S.tab === "admin" && !isAdmin()) S.tab = "partidos";
   renderTabs();
-  const views = { partidos: viewMatches, entrenos: viewTrainings, fantasy: viewFantasy, clasif: viewClas, perfil: viewProfile, admin: viewAdmin };
+  const views = { partidos: viewMatches, entrenos: viewTrainings, fantasy: viewFantasy, fotos: viewPhotos, clasif: viewClas, mas: viewMore, perfil: viewProfile, multas: viewFines, admin: viewAdmin };
   const ready = S.loaded.matches && S.loaded.players;
   morph($app, ready ? views[S.tab]() : `<div class="loading"><div class="ball"></div>Cargando…</div>`);
 }
@@ -299,7 +316,7 @@ function pollBlock(kind, item) {
   const votes = item.votes || {};
   const open = dl && dl > new Date();
   const mine = votes[S.me];
-  const players = sortedPlayers();
+  const players = sortedPlayers().filter((p) => p.position !== "Fotógrafo");
   const yes = players.filter((p) => votes[p.id] === "si");
   const no = players.filter((p) => votes[p.id] === "no");
   const none = players.filter((p) => !votes[p.id]);
@@ -388,7 +405,7 @@ function viewScorers() {
     <p class="muted small" style="text-align:center">${assigned} de ${total} goles del equipo apuntados</p>`;
 }
 function scorersInputs(m) {
-  const list = sortedPlayers().filter((p) => p.position !== "Entrenador")
+  const list = sortedPlayers().filter((p) => !isStaff(p))
     .sort((a, b) => (m.votes?.[b.id] === "si") - (m.votes?.[a.id] === "si"));
   return `<div class="bebas" style="font-size:20px;margin-top:14px">⚽ ¿Quién ha marcado?</div>
     ${list.map((p) => `<div class="goal-edit"><span><b>${esc(p.name)}</b> <span class="muted small">#${esc(p.number)}</span>${m.votes?.[p.id] === "si" ? ` <span class="tag ok">fue</span>` : ""}</span>
@@ -470,6 +487,7 @@ function viewMatches() {
     ${lp && !lpRated && wentTo(lp, S.me) ? `<div class="banner">⭐ ¿Qué tal fue contra ${esc(lp.rival)}? Valora a tus compañeros.<button class="btn sm primary" data-act="rate" data-id="${lp.id}">Valorar</button></div>` : ""}
     ${nx ? matchCard(nx, true) : `<div class="card empty">No hay partidos pendientes ahora mismo.</div>`}
     <div class="section-title"><h2>Temporada 26/27</h2><span class="muted small">${W}V · ${D}E · ${L}D</span></div>
+    ${isAdmin() ? `<button class="btn primary block" style="margin-bottom:10px" data-act="match-edit">➕ Crear partido</button>` : ""}
     <div class="card" style="padding:4px 12px">
       ${S.matches.length ? S.matches.map((m) => {
         const d = toDate(m.date), r = resultOf(m);
@@ -593,7 +611,7 @@ function seasonRatings() {
 // Solo valoran los que fueron al partido y solo se valora a los que jugaron (fueron)
 const wentTo = (m, pid) => m.votes?.[pid] === "si";
 function ratablePlayers(m) {
-  return sortedPlayers().filter((p) => p.position !== "Entrenador" && p.id !== S.me && wentTo(m, p.id));
+  return sortedPlayers().filter((p) => !isStaff(p) && p.id !== S.me && wentTo(m, p.id));
 }
 const pname = (id) => S.players.get(id)?.name || "Ex-jugador";
 
@@ -693,7 +711,7 @@ function lastPlayed() {
 // Puntos configurables por el admin (Admin → Fantasy). Valores por defecto:
 const PTS_DEF = { scorer: 3, starter: 1, gk: 1, maxScorers: 6 };
 const PTS = new Proxy({}, { get: (_, k) => +(S.cfg.fantasyPts?.[k] ?? PTS_DEF[k]) });
-const fieldPlayers = () => sortedPlayers().filter((p) => p.position !== "Entrenador");
+const fieldPlayers = () => sortedPlayers().filter((p) => !isStaff(p));
 // Abierto hasta que empieza el partido (si no hay hora, hasta el final del día del partido)
 const fxStatus = (m) => m.fantasy?.status || "auto";
 function autoOpen(m) {
@@ -957,6 +975,258 @@ async function saveCards(form) {
   toast("Tarjetas guardadas 🟨");
 }
 
+// =====================================================================
+//  MÁS (perfil, multas, administración)
+// =====================================================================
+function viewMore() {
+  const p = me();
+  const pend = finesOf(S.me).filter((f) => !f.paid).reduce((a, f) => a + (+f.price || 0), 0);
+  const item = (tab, ic, title, sub) => `<div class="card more-item" data-act="tab" data-tab="${tab}"><span class="mi-ic">${ic}</span><div><b>${title}</b><div class="muted small">${sub}</div></div><span class="mi-go">›</span></div>`;
+  return `<div class="section-title"><h2>Más</h2></div>
+    ${item("perfil", "👕", "Mi perfil", `${esc(p.fullName || p.name)} · ${isStaff(p) ? esc(p.position) : "Dorsal " + esc(p.number)}`)}
+    ${item("multas", "💸", "Multas", pend ? `Tienes ${money(pend)} pendientes` : "Estás al día 👍")}
+    ${isAdmin() ? item("admin", "🛠️", "Administración", "Partidos, Fantasy, entrenos, jugadores, ajustes") : ""}`;
+}
+const backToMore = () => `<button class="btn sm ghost" style="margin-top:10px" data-act="tab" data-tab="mas">‹ Más</button>`;
+
+// =====================================================================
+//  FOTOS: un álbum por partido. Las sube el fotógrafo (o un admin).
+//  Se guardan en la base de datos (gratis): miniatura en photos/{id} y la foto
+//  grande (2048 px) troceada en photos/{id}/chunks/{n}.
+// =====================================================================
+const CHUNK = 700000;
+const photoEvents = () => S.matches.filter((m) => matchStarted(m) || S.albums[m.id]?.count).slice().reverse();
+function viewPhotos() {
+  if (S.albumOpen) return viewAlbum(S.albumOpen);
+  const ev = photoEvents();
+  return `<div class="section-title"><h2>📷 Fotos</h2><span class="muted small">${Object.values(S.albums).reduce((a, x) => a + (x.count || 0), 0)} fotos</span></div>
+    ${isPhotographer() ? `<p class="muted small">Elige un partido para subir sus fotos. Al subirlas se avisa a todo el equipo.</p>` : ""}
+    ${ev.length ? `<div class="albums">${ev.map((m) => {
+      const a = S.albums[m.id]; const d = toDate(m.date);
+      return `<div class="album" data-act="album" data-id="${m.id}">
+        <div class="album-cover">${a?.cover ? `<img src="${a.cover}" alt="">` : crestImg(m.crest, "lg")}</div>
+        <div class="album-info"><b>${m.isHome !== false ? "vs" : "@"} ${esc(m.rival)}</b>
+        <span class="muted small">${d ? fmtShort(d) : ""}${resultOf(m) ? ` · ${m.golesGO}-${m.golesRival}` : ""} · ${a?.count ? `${a.count} ${a.count === 1 ? "foto" : "fotos"}` : "sin fotos"}</span></div>
+      </div>`;
+    }).join("")}</div>` : `<div class="card empty">Todavía no hay partidos jugados.</div>`}`;
+}
+function viewAlbum(mid) {
+  const m = S.matches.find((x) => x.id === mid);
+  if (!m) { S.albumOpen = null; return viewPhotos(); }
+  const list = S.photos.get(mid);
+  if (!list) loadAlbum(mid);
+  const up = S.uploading;
+  return `<button class="btn sm ghost" style="margin-top:10px" data-act="album-back">‹ Eventos</button>
+    <div class="section-title"><h2>${m.isHome !== false ? "vs" : "@"} ${esc(m.rival)}</h2><span class="muted small">${toDate(m.date) ? fmtShort(toDate(m.date)) : ""}</span></div>
+    ${isPhotographer() ? `<label class="btn primary block upl ${up ? "busy" : ""}">${up ? `⏳ Subiendo ${up.done}/${up.total}…` : "📤 Subir fotos"}
+      <input type="file" accept="image/*" multiple data-upload="${mid}" ${up ? "disabled" : ""} hidden></label>` : ""}
+    ${!list ? `<div class="loading"><div class="ball"></div>Cargando fotos…</div>`
+      : list.length ? `<p class="muted small">Toca una foto para verla en grande y descargarla.</p><div class="photo-grid">${list.map((ph, i) => `<button class="ph" data-act="photo" data-id="${mid}" data-i="${i}"><img src="${ph.thumb}" alt="Foto ${i + 1}" loading="lazy"></button>`).join("")}</div>`
+      : `<div class="card empty">Aún no hay fotos de este partido.</div>`}`;
+}
+async function loadAlbum(mid) {
+  if (S.loadingAlbum === mid) return;
+  S.loadingAlbum = mid;
+  try {
+    const snap = await getDocs(query(collection(db, "photos"), where("matchId", "==", mid)));
+    S.photos.set(mid, snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (toDate(a.createdAt) ?? 0) - (toDate(b.createdAt) ?? 0)));
+  } catch (e) { toast("No se pudieron cargar las fotos: " + e.message); S.photos.set(mid, []); }
+  S.loadingAlbum = null;
+  render();
+}
+// Reducir la foto en el móvil antes de subirla
+async function toJpeg(file, max, quality) {
+  let src;
+  try { src = await createImageBitmap(file, { imageOrientation: "from-image" }); }
+  catch { src = await new Promise((ok, ko) => { const im = new Image(); im.onload = () => ok(im); im.onerror = ko; im.src = URL.createObjectURL(file); }); }
+  const w0 = src.width, h0 = src.height, k = Math.min(1, max / Math.max(w0, h0));
+  const c = document.createElement("canvas"); c.width = Math.round(w0 * k); c.height = Math.round(h0 * k);
+  c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);
+  return { url: c.toDataURL("image/jpeg", quality), w: c.width, h: c.height };
+}
+async function uploadPhotos(mid, files) {
+  files = [...files].filter((f) => f.type.startsWith("image/"));
+  if (!files.length) return;
+  S.uploading = { done: 0, total: files.length }; render();
+  let ok = 0;
+  for (const f of files) {
+    try {
+      const big = await toJpeg(f, 2048, 0.85);
+      const thumb = await toJpeg(f, 480, 0.7);
+      const b64 = big.url.split(",")[1];
+      const parts = []; for (let i = 0; i < b64.length; i += CHUNK) parts.push(b64.slice(i, i + CHUNK));
+      const ref = doc(collection(db, "photos"));
+      const bt = writeBatch(db);
+      parts.forEach((d, i) => bt.set(doc(db, "photos", ref.id, "chunks", String(i)), { d }));
+      bt.set(ref, { matchId: mid, thumb: thumb.url, w: big.w, h: big.h, n: parts.length, by: S.me, createdAt: serverTimestamp() });
+      bt.set(doc(db, "albums", mid), { count: increment(1), updatedAt: serverTimestamp(), ...(S.albums[mid]?.cover ? {} : { cover: thumb.url }) }, { merge: true });
+      await bt.commit();
+      ok++;
+    } catch (e) { toast(`Error con ${f.name}: ${e.message}`); }
+    S.uploading.done++; render();
+  }
+  S.uploading = null; S.photos.delete(mid);
+  toast(`📷 ${ok} ${ok === 1 ? "foto subida" : "fotos subidas"}. Se avisará al equipo.`);
+  loadAlbum(mid);
+}
+async function fullPhotoUrl(ph) {
+  if (S.fullCache.has(ph.id)) return S.fullCache.get(ph.id);
+  const snap = await getDocs(collection(db, "photos", ph.id, "chunks"));
+  const b64 = snap.docs.sort((a, b) => +a.id - +b.id).map((d) => d.data().d).join("");
+  const blob = await (await fetch("data:image/jpeg;base64," + b64)).blob();
+  const url = URL.createObjectURL(blob);
+  S.fullCache.set(ph.id, url);
+  return url;
+}
+async function openPhoto(mid, i) {
+  const list = S.photos.get(mid) || []; const ph = list[i]; if (!ph) return;
+  S.viewer = { mid, i };
+  openModal(`<div class="viewer">
+    <div class="viewer-img"><img src="${ph.thumb}" alt="" id="vimg"><div class="viewer-load">Cargando foto…</div></div>
+    <div class="viewer-bar">
+      <button class="btn sm" data-act="photo" data-id="${mid}" data-i="${(i - 1 + list.length) % list.length}" ${list.length < 2 ? "disabled" : ""}>‹</button>
+      <span class="muted small">${i + 1} / ${list.length}</span>
+      <button class="btn sm" data-act="photo" data-id="${mid}" data-i="${(i + 1) % list.length}" ${list.length < 2 ? "disabled" : ""}>›</button>
+    </div>
+    <div class="acts">
+      ${isPhotographer() ? `<button class="btn" data-act="photo-del" data-id="${mid}" data-i="${i}">🗑️</button>` : ""}
+      <button class="btn" data-act="close">Cerrar</button>
+      <button class="btn primary" data-act="photo-dl" data-id="${mid}" data-i="${i}">⬇️ Descargar</button>
+    </div></div>`);
+  try {
+    const url = await fullPhotoUrl(ph);
+    if (S.viewer?.mid === mid && S.viewer?.i === i) { const im = $modal.querySelector("#vimg"); if (im) im.src = url; $modal.querySelector(".viewer-load")?.remove(); }
+  } catch (e) { toast("No se pudo cargar la foto: " + e.message); }
+}
+async function downloadPhoto(mid, i) {
+  const ph = (S.photos.get(mid) || [])[i]; const m = S.matches.find((x) => x.id === mid);
+  const url = await fullPhotoUrl(ph);
+  const blob = await (await fetch(url)).blob();
+  const name = `GameOverFC_${slug(m?.rival || "partido")}_${i + 1}.jpg`;
+  const file = new File([blob], name, { type: "image/jpeg" });
+  // iPhone: menú de compartir → "Guardar imagen". Android/ordenador: descarga directa.
+  if (/iphone|ipad|ipod/i.test(navigator.userAgent) && navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: "Game Over FC" }); return; } catch (e) { if (e.name === "AbortError") return; }
+  }
+  const a = document.createElement("a"); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  toast("⬇️ Foto descargada");
+}
+async function deletePhoto(mid, i) {
+  const list = S.photos.get(mid) || []; const ph = list[i]; if (!ph) return;
+  if (!(await confirmBox("¿Borrar esta foto?", "Desaparecerá del álbum para todos."))) return;
+  const bt = writeBatch(db);
+  for (let k = 0; k < (ph.n || 1); k++) bt.delete(doc(db, "photos", ph.id, "chunks", String(k)));
+  bt.delete(doc(db, "photos", ph.id));
+  const rest = list.filter((x) => x.id !== ph.id);
+  if (!rest.length) bt.delete(doc(db, "albums", mid));
+  else bt.set(doc(db, "albums", mid), { count: increment(-1), ...(S.albums[mid]?.cover === ph.thumb ? { cover: rest[0].thumb } : {}) }, { merge: true });
+  await bt.commit();
+  S.photos.set(mid, rest);
+  toast("Foto borrada");
+  render();
+}
+
+// =====================================================================
+//  MULTAS
+// =====================================================================
+const DEFAULT_FINE_TYPES = [
+  { id: "retraso-entreno", name: "Retraso sin avisar en el entreno", price: 3 },
+  { id: "retraso-partido", name: "Retraso sin avisar en el partido", price: 5 },
+  { id: "amarilla", name: "Tarjeta amarilla (mal comportamiento)", price: 8 },
+  { id: "roja", name: "Tarjeta roja", price: 10 },
+];
+const fineTypes = () => S.fineTypes ?? DEFAULT_FINE_TYPES;
+const money = (n) => `${(+n || 0).toLocaleString("es-ES", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} €`;
+const finesOf = (pid) => S.fines.filter((f) => f.playerId === pid);
+function fineRow(f, showName = true) {
+  const d = toDate(f.date);
+  return `<div class="fine ${f.paid ? "paid" : ""}">
+    <div class="fine-main"><b>${showName ? esc(pname(f.playerId)) + " · " : ""}${esc(f.name)}</b>
+      <span class="muted small">${d ? fmtShort(d) : ""}${f.note ? " · " + esc(f.note) : ""}</span></div>
+    <div class="fine-side"><span class="fine-price">${money(f.price)}</span><span class="tag ${f.paid ? "ok" : "ko"}">${f.paid ? "Pagada" : "Pendiente"}</span></div>
+    ${isAdmin() ? `<div class="fine-acts"><button class="btn sm" data-act="fine-paid" data-id="${f.id}">${f.paid ? "↩︎ Pendiente" : "✓ Pagada"}</button><button class="btn sm" data-act="fine-edit" data-id="${f.id}">Editar</button></div>` : ""}
+  </div>`;
+}
+function finesSummaryHtml(pid) {
+  const list = finesOf(pid);
+  if (!list.length) return `<p class="muted small">Sin multas. ¡Ejemplar! 😇</p>`;
+  const pend = list.filter((f) => !f.paid).reduce((a, f) => a + (+f.price || 0), 0);
+  return `<p class="small">Pendiente: <b class="${pend ? "txt-ko" : "txt-ok"}">${money(pend)}</b> · Total: ${money(list.reduce((a, f) => a + (+f.price || 0), 0))}</p>${list.map((f) => fineRow(f, false)).join("")}`;
+}
+function viewFines() {
+  const all = S.fines;
+  const pend = all.filter((f) => !f.paid).reduce((a, f) => a + (+f.price || 0), 0);
+  const paid = all.filter((f) => f.paid).reduce((a, f) => a + (+f.price || 0), 0);
+  const debt = {};
+  for (const f of all) if (!f.paid) { (debt[f.playerId] ||= { sum: 0, n: 0 }); debt[f.playerId].sum += +f.price || 0; debt[f.playerId].n++; }
+  const ranking = Object.entries(debt).filter(([pid]) => S.players.has(pid)).sort((a, b) => b[1].sum - a[1].sum);
+  return `${backToMore()}
+    <div class="section-title"><h2>💸 Multas</h2></div>
+    <div class="stats" style="margin-top:0">
+      <div class="stat"><div class="v">${money(pend)}</div><div class="l">Pendiente</div></div>
+      <div class="stat"><div class="v">${money(paid)}</div><div class="l">Bote cobrado</div></div>
+      <div class="stat"><div class="v">${all.length}</div><div class="l">Multas</div></div>
+    </div>
+    ${isAdmin() ? `<div class="row2" style="margin-top:12px"><button class="btn primary" data-act="fine-edit">➕ Poner multa</button><button class="btn" data-act="fine-types">⚙️ Tipos y precios</button></div>` : ""}
+    <div class="card" style="margin-top:12px"><h3>📋 Precios</h3>${fineTypes().map((t) => `<div class="admin-item"><span>${esc(t.name)}</span><b>${money(t.price)}</b></div>`).join("") || `<p class="muted small">No hay tipos de multa.</p>`}</div>
+    <div class="card"><h3>🙋 Mis multas</h3>${finesSummaryHtml(S.me)}</div>
+    ${ranking.length ? `<div class="card" style="padding:4px 12px"><h3 style="margin-top:10px">🧾 Quién debe</h3>${ranking.map(([pid, v], i) => `<div class="rate-row flat" data-act="player" data-id="${pid}"><span class="rk">${i + 1}</span><span class="nm">${esc(pname(pid))}</span><span class="muted small">${v.n} ${v.n === 1 ? "multa" : "multas"}</span><span class="avg lo" style="font-size:18px">${money(v.sum)}</span></div>`).join("")}</div>` : ""}
+    <div class="section-title"><h3>Todas las multas</h3></div>
+    ${all.length ? all.map((f) => fineRow(f)).join("") : `<div class="card empty">Ninguna multa todavía.</div>`}`;
+}
+function fineForm(fid) {
+  const f = S.fines.find((x) => x.id === fid) || {};
+  const types = fineTypes();
+  const t0 = types.find((t) => t.id === f.typeId) || types[0] || {};
+  openModal(`<form data-form="fine" data-id="${fid || ""}">
+    <h3>${fid ? "Editar multa" : "➕ Poner multa"}</h3>
+    <label>Jugador</label><select name="playerId" required>${sortedPlayers().map((p) => `<option value="${p.id}" ${f.playerId === p.id ? "selected" : ""}>${esc(p.name)}${isStaff(p) ? "" : " #" + esc(p.number)}</option>`).join("")}</select>
+    <label>Motivo</label><select name="typeId" data-fine-type>${types.map((t) => `<option value="${t.id}" data-price="${t.price}" ${(f.typeId || t0.id) === t.id ? "selected" : ""}>${esc(t.name)} (${money(t.price)})</option>`).join("")}<option value="otra" ${f.typeId === "otra" ? "selected" : ""}>Otra…</option></select>
+    <label>Descripción (si es “Otra”)</label><input name="custom" value="${f.typeId === "otra" ? esc(f.name) : ""}" placeholder="Ej: no traer la equipación">
+    <div class="row2"><div><label>Precio (€)</label><input type="number" step="0.5" min="0" name="price" required value="${esc(f.price ?? t0.price ?? 0)}"></div>
+      <div><label>Fecha</label><input type="date" name="date" required value="${toDateInput(toDate(f.date) || new Date())}"></div></div>
+    <label>Nota (opcional)</label><input name="note" maxlength="120" value="${esc(f.note || "")}">
+    <label class="check"><input type="checkbox" name="paid" ${f.paid ? "checked" : ""}> Ya está pagada</label>
+    <div class="acts">${fid ? `<button type="button" class="btn" data-act="fine-del" data-id="${fid}">🗑️ Quitar</button>` : ""}<button type="button" class="btn" data-act="close">Cancelar</button><button class="btn primary" type="submit">Guardar</button></div>
+  </form>`);
+}
+async function saveFine(form) {
+  const f = Object.fromEntries(new FormData(form));
+  const t = fineTypes().find((x) => x.id === f.typeId);
+  const name = f.typeId === "otra" ? (f.custom.trim() || "Otra multa") : t?.name || "Multa";
+  const data = { playerId: f.playerId, typeId: f.typeId, name, price: Math.max(0, +f.price || 0), date: Timestamp.fromDate(new Date(f.date + "T12:00")), note: f.note.trim(), paid: !!f.paid };
+  if (form.dataset.id) await updateDoc(doc(db, "fines", form.dataset.id), data);
+  else await setDoc(doc(collection(db, "fines")), { ...data, createdAt: serverTimestamp() });
+  toast("Multa guardada 💸");
+}
+function fineTypesForm() {
+  const row = (t = {}) => `<div class="ft-row"><input name="tn" placeholder="Motivo" value="${esc(t.name || "")}"><input name="tp" type="number" step="0.5" min="0" placeholder="€" value="${esc(t.price ?? "")}"><input type="hidden" name="ti" value="${esc(t.id || "")}"><button type="button" class="btn sm" data-act="ft-del">✕</button></div>`;
+  openModal(`<form data-form="finetypes">
+    <h3>⚙️ Tipos de multa y precios</h3>
+    <p class="muted small">Cambia el motivo o el precio, quita (✕) o añade tipos nuevos.</p>
+    <div id="ftRows">${fineTypes().map(row).join("")}</div>
+    <button type="button" class="btn sm" data-act="ft-add">➕ Añadir tipo</button>
+    <label class="check"><input type="checkbox" name="applyUnpaid"> Aplicar los precios nuevos también a las multas que aún no se han pagado</label>
+    <template id="ftTpl">${row()}</template>
+    <div class="acts"><button type="button" class="btn" data-act="close">Cancelar</button><button class="btn primary" type="submit">Guardar</button></div>
+  </form>`);
+}
+async function saveFineTypes(form) {
+  const fd = new FormData(form);
+  const names = fd.getAll("tn"), prices = fd.getAll("tp"), ids = fd.getAll("ti");
+  const types = names.map((n, i) => ({ id: ids[i] || slug(n) || "tipo-" + i, name: n.trim(), price: Math.max(0, +prices[i] || 0) })).filter((t) => t.name);
+  await setDoc(doc(db, "config", "fines"), { types });
+  if (fd.get("applyUnpaid")) {
+    const bt = writeBatch(db); let n = 0;
+    for (const f of S.fines) {
+      const t = types.find((x) => x.id === f.typeId);
+      if (!f.paid && t && (+f.price !== t.price || f.name !== t.name)) { bt.update(doc(db, "fines", f.id), { price: t.price, name: t.name }); n++; }
+    }
+    if (n) await bt.commit();
+    toast(`Precios guardados · ${n} multas sin pagar actualizadas`);
+  } else toast("Precios guardados");
+}
+
 // ----- perfil de un jugador (cualquiera) -----
 function playerGoals(pid) {
   const list = S.matches.filter((m) => m.goals?.[pid] > 0).map((m) => ({ m, n: m.goals[pid] }));
@@ -979,14 +1249,15 @@ function playerModal(pid) {
   const went = att.filter((m) => m.votes?.[pid] === "si").length;
   openModal(`<div class="profile">${jersey(p)}
     <h2 style="margin-top:6px">${esc(p.fullName || p.name)}</h2>
-    <div class="muted">${p.position === "Entrenador" ? "Entrenador" : "Dorsal " + esc(p.number)} · GAME OVER FC</div>
+    <div class="muted">${isStaff(p) ? esc(p.position) : "Dorsal " + esc(p.number)} · GAME OVER FC</div>
     ${(() => { const c = cardsTable().find(([x]) => x === pid)?.[1]; return c ? `<div style="margin-top:6px">🟨 ${c.y} · 🟥 ${c.r}</div>` : ""; })()}
-    ${p.position !== "Entrenador" ? `<div class="stats">
+    ${!isStaff(p) ? `<div class="stats">
       <div class="stat"><div class="v">⚽ ${g.total}</div><div class="l">Goles</div></div>
       <div class="stat"><div class="v">⭐ ${fmtAvg(r?.avg)}</div><div class="l">Valoración</div></div>
       <div class="stat"><div class="v">${went}/${att.length}</div><div class="l">Partidos</div></div>
     </div>` : ""}</div>
-    ${p.position !== "Entrenador" ? `<h3 style="margin-top:16px">⚽ Goles</h3>${goalsListHtml(pid)}` : ""}
+    ${!isStaff(p) ? `<h3 style="margin-top:16px">⚽ Goles</h3>${goalsListHtml(pid)}` : ""}
+    <h3 style="margin-top:16px">💸 Multas</h3>${finesSummaryHtml(pid)}
     <div class="acts">${isAdmin() ? `<button class="btn" data-act="player-edit" data-id="${pid}">Editar</button>` : ""}<button class="btn primary" data-act="close">Cerrar</button></div>`);
 }
 
@@ -998,26 +1269,28 @@ function attendance(list) {
 }
 function viewProfile() {
   const p = me();
+  const back = backToMore();
   const am = attendance(S.matches), at = attendance(S.trainings);
   const season = seasonRatings();
   const my = season[S.me];
   const ranking = Object.entries(season).filter(([pid]) => S.players.has(pid)).sort((a, b) => b[1].avg - a[1].avg);
   const myComments = S.matches.filter((m) => S.ratings.has(m.id)).reverse().flatMap((m) =>
     (S.ratings.get(m.id) || []).filter((r) => r.comments?.[S.me]).map((r) => ({ m, text: r.comments[S.me], score: r.scores?.[S.me] }))).slice(0, 15);
-  return `${notifBanner()}
+  return `${back}${notifBanner()}
     <div class="card profile hero">
       ${jersey(p)}
       <h2 style="margin-top:8px">${esc(p.fullName || p.name)}</h2>
-      <div class="muted">${p.position === "Entrenador" ? "Entrenador" : "Dorsal " + esc(p.number)} · GAME OVER FC ${p.role === "admin" ? ` · <span class="tag gold">ADMIN</span>` : ""}</div>
+      <div class="muted">${isStaff(p) ? esc(p.position) : "Dorsal " + esc(p.number)} · GAME OVER FC ${p.role === "admin" ? ` · <span class="tag gold">ADMIN</span>` : ""}</div>
       <div class="stats">
         <div class="stat"><div class="v">${am.yes}/${am.total}</div><div class="l">Partidos</div></div>
         <div class="stat"><div class="v">${at.yes}/${at.total}</div><div class="l">Entrenos</div></div>
         <div class="stat"><div class="v">${Math.round((am.pct + at.pct) / ((am.total ? 1 : 0) + (at.total ? 1 : 0) || 1))}%</div><div class="l">Asistencia</div></div>
       </div>
-      ${p.position !== "Entrenador" ? (() => { const g = scorersTable().find(([pid]) => pid === S.me); return `<div class="stat" style="margin-top:10px"><div class="v">⚽ ${g ? g[1].goals : 0}</div><div class="l">Goles esta temporada${g ? ` · en ${g[1].matches} ${g[1].matches === 1 ? "partido" : "partidos"}` : ""}</div></div>`; })() : ""}
-      ${p.position !== "Entrenador" ? `<div class="stat" style="margin-top:10px"><div class="v">⭐ ${fmtAvg(my?.avg)}</div><div class="l">Media de valoraciones${my ? ` · ${my.n} notas en ${my.matches.size} ${my.matches.size === 1 ? "partido" : "partidos"}` : ""}</div></div>` : ""}
+      ${!isStaff(p) ? (() => { const g = scorersTable().find(([pid]) => pid === S.me); return `<div class="stat" style="margin-top:10px"><div class="v">⚽ ${g ? g[1].goals : 0}</div><div class="l">Goles esta temporada${g ? ` · en ${g[1].matches} ${g[1].matches === 1 ? "partido" : "partidos"}` : ""}</div></div>`; })() : ""}
+      ${!isStaff(p) ? `<div class="stat" style="margin-top:10px"><div class="v">⭐ ${fmtAvg(my?.avg)}</div><div class="l">Media de valoraciones${my ? ` · ${my.n} notas en ${my.matches.size} ${my.matches.size === 1 ? "partido" : "partidos"}` : ""}</div></div>` : ""}
     </div>
-    ${p.position !== "Entrenador" ? `<div class="card"><h3>⚽ Mis goles</h3>${goalsListHtml(S.me)}</div>` : ""}
+    ${!isStaff(p) ? `<div class="card"><h3>⚽ Mis goles</h3>${goalsListHtml(S.me)}</div>` : ""}
+    <div class="card"><h3>💸 Mis multas</h3>${finesSummaryHtml(S.me)}</div>
     ${myComments.length ? `<div class="card"><h3>💬 Lo que dicen de ti</h3>${myComments.map((c) => `<div class="cmt"><b>🕶️ Anónimo</b>${c.score ? ` <span class="muted">(${c.score})</span>` : ""} · <span class="muted small">${c.m.isHome !== false ? "vs" : "@"} ${esc(c.m.rival)}</span><br>${esc(c.text)}</div>`).join("")}</div>` : ""}
     <div class="card"><h3>🏆 Ranking de valoraciones</h3>
       ${ranking.length ? ranking.map(([pid, v], i) => `<div class="rate-row flat ${pid === S.me ? "meRow" : ""}" data-act="player" data-id="${pid}"><span class="rk">${["🥇", "🥈", "🥉"][i] || i + 1}</span><span class="nm">${esc(pname(pid))}</span><span class="muted small">${v.matches.size} ${v.matches.size === 1 ? "partido" : "partidos"}</span><span class="avg ${v.avg >= 7 ? "hi" : v.avg < 5 ? "lo" : ""}">${fmtAvg(v.avg)}</span></div>`).join("")
@@ -1069,7 +1342,7 @@ async function setupForegroundPush() {
 function viewAdmin() {
   const sub = [["partidos", "Partidos"], ["fantasy", "Fantasy"], ["entrenos", "Entrenos"], ["clasif", "Clasificación"], ["jugadores", "Jugadores y permisos"], ["ajustes", "Ajustes"]];
   const body = { partidos: adminMatches, fantasy: adminFantasy, entrenos: adminTrainings, clasif: adminStandings, jugadores: adminPlayers, ajustes: adminSettings }[S.adminTab]();
-  return `<div class="section-title"><h2>Administración</h2></div>
+  return `${backToMore()}<div class="section-title"><h2>Administración</h2></div>
     <div class="subtabs">${sub.map(([k, l]) => `<button class="btn sm ${S.adminTab === k ? "on" : ""}" data-act="atab" data-tab="${k}">${l}</button>`).join("")}</div>
     ${body}`;
 }
@@ -1281,7 +1554,7 @@ function playerForm(p = {}) {
     <div class="row2"><div><label>Nombre camiseta</label><input name="name" required value="${esc(p.name || "")}"></div>
       <div><label>Dorsal</label><input name="number" required value="${esc(p.number ?? "")}"></div></div>
     <label>Nombre completo</label><input name="fullName" value="${esc(p.fullName || "")}">
-    <label>Posición</label><select name="position">${["Jugador", "Portero", "Entrenador"].map((x) => `<option ${p.position === x ? "selected" : ""}>${x}</option>`).join("")}</select>
+    <label>Posición</label><select name="position">${["Jugador", "Portero", "Entrenador", "Fotógrafo"].map((x) => `<option ${p.position === x ? "selected" : ""}>${x}</option>`).join("")}</select>
     <label>Goles anteriores sin partido asignado</label><input type="number" min="0" name="goalsBase" value="${esc(p.goalsBase || 0)}">
     <div class="row2"><div><label>🟨 Amarillas anteriores</label><input type="number" min="0" name="cardsBaseY" value="${esc(p.cardsBase?.y || 0)}"></div>
       <div><label>🟥 Rojas anteriores</label><input type="number" min="0" name="cardsBaseR" value="${esc(p.cardsBase?.r || 0)}"></div></div>
@@ -1363,7 +1636,7 @@ document.addEventListener("click", async (e) => {
   try {
     switch (act) {
       case "pick": return claim(id);
-      case "tab": S.tab = b.dataset.tab; window.scrollTo(0, 0); return render();
+      case "tab": if (b.dataset.tab === "fotos" && S.tab === "fotos") S.albumOpen = null; S.tab = b.dataset.tab; window.scrollTo(0, 0); return render();
       case "atab": S.adminTab = b.dataset.tab; return render();
       case "ctab": S.clasTab = b.dataset.tab; return render();
       case "vote": return vote(b.dataset.kind, id, b.dataset.v);
@@ -1387,6 +1660,17 @@ document.addEventListener("click", async (e) => {
         return drawCourt();
       }
       case "fx": return fantasyMatchModal(id);
+      case "album": S.albumOpen = id; window.scrollTo(0, 0); return render();
+      case "album-back": S.albumOpen = null; return render();
+      case "photo": return openPhoto(id, +b.dataset.i);
+      case "photo-dl": return downloadPhoto(id, +b.dataset.i);
+      case "photo-del": $modal.close(); return deletePhoto(id, +b.dataset.i);
+      case "fine-edit": return fineForm(id);
+      case "fine-types": return fineTypesForm();
+      case "fine-paid": { const f = S.fines.find((x) => x.id === id); await updateDoc(doc(db, "fines", id), { paid: !f.paid }); return toast(f.paid ? "Marcada como pendiente" : "Multa pagada ✓"); }
+      case "fine-del": if (await confirmBox("¿Quitar esta multa?", "Se borrará del todo.")) { await deleteDoc(doc(db, "fines", id)); toast("Multa quitada"); } return;
+      case "ft-add": { const box = $modal.querySelector("#ftRows"); box.insertAdjacentHTML("beforeend", $modal.querySelector("#ftTpl").innerHTML); return; }
+      case "ft-del": return b.closest(".ft-row").remove();
       case "fxadmin": return fxAdminForm(id);
       case "atab-fx": S.tab = "admin"; S.adminTab = "fantasy"; return render();
       case "fxdel": {
@@ -1443,6 +1727,8 @@ document.addEventListener("submit", async (e) => {
     if (kind === "match") await saveMatch(form);
     if (kind === "date") await saveDate(form);
     if (kind === "predict") await savePrediction(form);
+    if (kind === "fine") await saveFine(form);
+    if (kind === "finetypes") await saveFineTypes(form);
     if (kind === "fxadmin") await saveFxAdmin(form);
     if (kind === "fxpts") {
       const f = Object.fromEntries(new FormData(form));
@@ -1475,6 +1761,12 @@ document.addEventListener("submit", async (e) => {
 });
 
 document.addEventListener("change", (e) => {
+  if (e.target.dataset?.upload) { uploadPhotos(e.target.dataset.upload, e.target.files); e.target.value = ""; return; }
+  if (e.target.matches?.("[data-fine-type]")) {
+    const opt = e.target.selectedOptions[0]; const pr = e.target.form.querySelector('[name="price"]');
+    if (opt?.dataset.price && pr) pr.value = opt.dataset.price;
+    return;
+  }
   const box = e.target.closest?.(".chips[data-max]");
   if (!box || e.target.type !== "checkbox" || !e.target.checked) return;
   const max = +box.dataset.max;

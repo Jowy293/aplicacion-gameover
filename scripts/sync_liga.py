@@ -256,6 +256,27 @@ def notify_fantasy(db):
         snap.reference.update({"fantasy.notified": True})
 
 
+def notify_photos(db):
+    """Avisa cuando el fotógrafo sube fotos nuevas de un partido (una vez por tanda)."""
+    matches = {d.id: d.to_dict() for d in db.collection("matches").stream()}
+    for snap in db.collection("albums").stream():
+        a = snap.to_dict()
+        count, notified = a.get("count", 0), a.get("notifiedCount", 0)
+        if count <= notified:
+            if count < notified:
+                snap.reference.update({"notifiedCount": count})  # se borraron fotos
+            continue
+        upd = a.get("updatedAt")
+        if upd and (now() - upd).total_seconds() < 10 * 60:
+            continue  # está subiendo todavía: esperar a que termine la tanda
+        m = matches.get(snap.id, {})
+        nuevas = count - notified
+        body = f"{nuevas} {'foto nueva' if nuevas == 1 else 'fotos nuevas'} del partido contra {m.get('rival', 'el rival')}. ¡Entra a verlas y descárgatelas!"
+        print(f"Fotos: {body}")
+        send_push(db, "📷 ¡Nuevas fotos del partido!", body)
+        snap.reference.update({"notifiedCount": count})
+
+
 def main():
     db = init()
     cfg = get_config(db)
@@ -265,6 +286,7 @@ def main():
         print("Lectura de la web de la liga desactivada (config/app.leagueSync = false).")
         notify_pending(db, cfg)
         notify_fantasy(db)
+        notify_photos(db)
         return
     try:
         html = fetch(url)
@@ -306,6 +328,7 @@ def main():
     # Las notificaciones se envían siempre (también para partidos metidos a mano por el admin)
     notify_pending(db, cfg)
     notify_fantasy(db)
+    notify_photos(db)
 
 
 if __name__ == "__main__":

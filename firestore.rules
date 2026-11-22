@@ -117,6 +117,29 @@ service cloud.firestore {
       allow update: if isAdmin() || onlyMyVote();
     }
 
+    // Fotos: las sube el fotógrafo (posición "Fotógrafo") o un admin
+    function isPhotographer() {
+      return hasUser() && (get(/databases/$(database)/documents/players/$(myPlayer())).data.get('position', '') == 'Fotógrafo' || isAdmin());
+    }
+    match /photos/{photoId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isPhotographer();
+      match /chunks/{n} {
+        allow read: if signedIn();
+        allow create, update, delete: if isPhotographer();
+      }
+    }
+    match /albums/{mid} {
+      allow read: if signedIn();
+      allow create, update, delete: if isPhotographer();
+    }
+
+    // Multas: todos las ven, solo el admin las pone/cambia
+    match /fines/{id} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
     match /config/{id} {
       allow read: if signedIn();
       allow write: if isAdmin();
