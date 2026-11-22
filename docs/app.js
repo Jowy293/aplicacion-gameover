@@ -153,6 +153,16 @@ function route() {
 async function registerSW() {
   if (!("serviceWorker" in navigator)) return;
   try { S.swReg = await navigator.serviceWorker.register("./sw.js"); } catch (e) { console.warn(e); }
+  // Actualización automática: al volver a la app se busca versión nueva y, si la hay, se recarga sola
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloading = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadController || reloading || $modal.open || S.uploading) return; // no cortar si se está rellenando algo o subiendo fotos
+    reloading = true; location.reload();
+  });
+  const check = () => S.swReg?.update().catch(() => {});
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") check(); });
+  setInterval(check, 30 * 60 * 1000);
 }
 
 // ---------- selección de usuario ----------
@@ -992,6 +1002,7 @@ function viewMore() {
   const pend = finesOf(S.me).filter((f) => !f.paid).reduce((a, f) => a + (+f.price || 0), 0);
   const item = (tab, ic, title, sub) => `<div class="card more-item" data-act="tab" data-tab="${tab}"><span class="mi-ic">${ic}</span><div><b>${title}</b><div class="muted small">${sub}</div></div><span class="mi-go">›</span></div>`;
   return `<div class="section-title"><h2>Más</h2></div>
+    <div data-act="tab" data-tab="multas" class="piggy-link">${piggyBank()}</div>
     ${item("perfil", "👕", "Mi perfil", `${esc(p.fullName || p.name)} · ${isStaff(p) ? esc(p.position) : "Dorsal " + esc(p.number)}`)}
     ${item("multas", "🐷", "Multas y hucha de la cena", `Hucha: ${money(S.fines.reduce((a, f) => a + (+f.price || 0), 0))} · ${pend ? `debes ${money(pend)}` : "estás al día 👍"}`)}
     ${isAdmin() ? item("admin", "🛠️", "Administración", "Partidos, Fantasy, entrenos, jugadores, ajustes") : ""}`;
@@ -1155,7 +1166,7 @@ function piggyBank() {
   const top = 43, h = 124, yPaid = top + h * (1 - lvl(paid)), yTotal = top + h * (1 - lvl(total));
   const pct = Math.round(lvl(total) * 100);
   return `<div class="card piggy">
-    <div class="piggy-title">🍽️ Hucha para la cena del equipo</div>
+    <div class="piggy-title">🐷 Hucha de la cena del equipo</div>
     <svg class="pig" viewBox="0 0 240 200" role="img" aria-label="Hucha con ${money(total)}">
       <defs>
         <linearGradient id="pigG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffc1d9"/><stop offset="1" stop-color="#ec5f95"/></linearGradient>
