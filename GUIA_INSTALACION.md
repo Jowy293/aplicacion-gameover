@@ -54,7 +54,7 @@ Enlace: **https://jowy293.github.io/aplicacion-gameover/**
 |---|---|
 | **Cuando el admin pone la hora del partido** | Se abre la **votación de asistencia** y llega una **notificación a todos** (en menos de 1 hora; los miércoles, 15 min). Si cambia la hora, llega otro aviso. |
 | **Votación del partido** | **Voy / No voy** hasta el **miércoles a las 20:00** de esa semana (si el partido es antes, hasta que empieza). |
-| **Martes 10:00** | Se abre la **encuesta del entreno del miércoles** (entreno a las 20:00), con aviso. Cierra el **miércoles a las 20:00**. |
+| **Martes 10:00** | Se abre la **encuesta del entreno del miércoles** (entreno a las 20:00), con aviso. Cierra el **miércoles a las 14:00**. |
 | **Fantasy** | Se abre solo para el próximo partido y se cierra al empezar. El admin puede abrirlo, cerrarlo o desactivarlo cuando quiera. |
 | **24 h y 2 h antes de cada cierre** | Recordatorio **solo a quien no ha votado** (partido, entreno) o **no ha hecho su Fantasy**. |
 | **Después del partido** | El admin pone el resultado, quién fue, el quinteto inicial y los goleadores. Los puntos Fantasy, los goleadores y quién puede valorar se actualizan solos. |

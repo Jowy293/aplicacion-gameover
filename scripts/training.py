@@ -1,4 +1,4 @@
-"""Martes a las 10:00 (hora de Madrid): abre la encuesta del entreno del miércoles (cierra el miércoles a las 20:00)."""
+"""Martes a las 10:00 (hora de Madrid): abre la encuesta del entreno del miércoles (cierra el miércoles a las 14:00)."""
 from datetime import datetime, timedelta
 
 from common import TZ, get_config, human, init, now, send_push
@@ -12,7 +12,7 @@ def main(force=False):
         print("Encuesta automática de entreno desactivada en Ajustes.")
         return
     open_hour = int(cfg.get("trainingOpenHour", 10))
-    dl_hour = int(cfg.get("trainingDeadlineHour", 20))
+    dl_hour = int(cfg.get("trainingDeadlineHour", 14))
     # Se abre el martes a partir de las 10:00. Si GitHub se saltó esa ejecución, se recupera en la
     # siguiente que haya (hasta el miércoles antes del cierre).
     tuesday_open = today.weekday() == 1 and today.hour >= open_hour

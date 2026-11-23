@@ -375,7 +375,7 @@ const resultOf = (m) => {
   return a > b ? "W" : a < b ? "L" : "D";
 };
 const teams = (m) => m.isHome !== false ? ["GAME OVER FC", m.rival] : [m.rival, "GAME OVER FC"];
-const GO_CREST = "crests/game-over-fc.png";
+const GO_CREST = "crests/game-over-fc.png?v=4";
 const CRESTS = {
   "atletico-salesiano": "Atlético Salesiano", "bar-ferrocarril-fs": "Bar Ferrocarril FS", "birrarreal-fs": "Birrarreal FS",
   "buena-onda-fs-b": 'Buena Onda FS "B"', "cd-santa-rosa-copisan": "C.D. Santa Rosa Copisan", "colpet-fs": "Colpet FS",
@@ -538,7 +538,7 @@ function viewTrainings() {
   };
   return `${notifBanner()}
     <div class="section-title"><h2>Entrenos</h2></div>
-    ${current.length ? current.map(card).join("") : `<div class="card empty">La encuesta del entreno se abre el martes a las ${S.cfg.trainingOpenHour ?? 10}:00 y se cierra el miércoles a las ${S.cfg.trainingDeadlineHour ?? 20}:00. 💪</div>`}
+    ${current.length ? current.map(card).join("") : `<div class="card empty">La encuesta del entreno se abre el martes a las ${S.cfg.trainingOpenHour ?? 10}:00 y se cierra el miércoles a las ${S.cfg.trainingDeadlineHour ?? 14}:00. 💪</div>`}
     ${past.length ? `<div class="section-title"><h3>Anteriores</h3></div><div class="card" style="padding:4px 12px">${past.map((t) => {
       const y = Object.values(t.votes || {}).filter((v) => v === "si").length;
       return `<div class="admin-item"><span>${cap(fmtDay(toDate(t.date)))}</span><span class="tag ok">${y} fueron</span></div>`;
@@ -1588,7 +1588,7 @@ function adminMatches() {
 
 function adminTrainings() {
   return `<button class="btn primary block" data-act="train-edit">➕ Crear encuesta de entreno</button>
-    <p class="muted small">Cada martes a las 10:00 se abre automáticamente la encuesta del entreno del miércoles, que cierra el miércoles a las 20:00 (puedes desactivarlo en Ajustes).</p>
+    <p class="muted small">Cada martes a las 10:00 se abre automáticamente la encuesta del entreno del miércoles, que cierra el miércoles a las ${S.cfg.trainingDeadlineHour ?? 14}:00 (puedes desactivarlo en Ajustes).</p>
     <div class="card" style="padding:4px 12px">${S.trainings.map((t) => `<div class="admin-item"><div><b>${cap(fmtDay(toDate(t.date)))}</b><br>
       <span class="muted small">${esc(t.time || "")} ${t.place ? "· " + esc(t.place) : ""} · ${Object.values(t.votes || {}).filter((v) => v === "si").length} van</span></div>
       <div class="acts"><button class="btn sm" data-act="train-edit" data-id="${t.id}">Editar</button></div></div>`).join("") || `<div class="empty">Sin entrenos</div>`}</div>`;
@@ -1720,7 +1720,7 @@ function adminSettings() {
     <label class="check"><input type="checkbox" name="trainingAuto" ${c.trainingAuto !== false ? "checked" : ""}> Abrir encuesta automática cada martes a las 10:00</label>
     <div class="row2">
       <div><label>Hora del entreno</label><input type="time" name="trainingTime" value="${esc(c.trainingTime || "")}"></div>
-      <div><label>Cierre votación entreno (hora)</label><input type="number" name="trainingDeadlineHour" min="0" max="23" value="${esc(c.trainingDeadlineHour ?? 20)}"></div>
+      <div><label>Cierre votación entreno (hora)</label><input type="number" name="trainingDeadlineHour" min="0" max="23" value="${esc(c.trainingDeadlineHour ?? 14)}"></div>
     </div>
     <label>Lugar del entreno</label><input name="trainingPlace" value="${esc(c.trainingPlace || "")}" placeholder="Pabellón…">
     <h3 style="margin-top:16px">Liga</h3>
@@ -1955,7 +1955,7 @@ document.addEventListener("click", async (e) => {
         const t = S.trainings.find((x) => x.id === id);
         if (t) return trainingForm(t);
         const wed = new Date(); wed.setDate(wed.getDate() + ((3 - wed.getDay() + 7) % 7 || 7));
-        const dl = new Date(wed); dl.setHours(S.cfg.trainingDeadlineHour ?? 20, 0, 0, 0);
+        const dl = new Date(wed); dl.setHours(S.cfg.trainingDeadlineHour ?? 14, 0, 0, 0);
         return trainingForm({ date: wed, pollDeadline: dl });
       }
       case "player-edit": return playerForm(S.players.get(id));

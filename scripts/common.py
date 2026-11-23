@@ -16,7 +16,7 @@ DEFAULT_CONFIG = {
     "trainingAuto": True,
     "trainingTime": "20:00",            # el entreno es el miércoles a las 20:00
     "trainingOpenHour": 10,            # la encuesta se abre el martes a las 10:00
-    "trainingDeadlineHour": 20,
+    "trainingDeadlineHour": 14,        # la encuesta del entreno se cierra el miércoles a las 14:00
     "trainingPlace": "",
     "leagueUrl": "https://ligacomarcal.com/competicion/lc-cuarta-division-26-27-mtizb4nd/clasificacion",
 }

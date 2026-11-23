@@ -2,9 +2,9 @@
 // Las notificaciones las muestra SIEMPRE este archivo (con la app abierta o cerrada, en Android y en iPhone),
 // sin depender de la librería de Firebase en segundo plano.
 
-const CACHE = "gofc-v20";
+const CACHE = "gofc-v21";
 const SHELL = ["./", "./index.html", "./styles.css", "./app.js", "./firebase-config.js",
-  "./manifest.json", "./icons/logo.png?v=3", "./icons/icon-192.png"];
+  "./manifest.json", "./icons/logo.png?v=4", "./icons/icon-192.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
